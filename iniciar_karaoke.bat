@@ -7,26 +7,57 @@ echo   🎤 OpenKaraoke (Plug & Play) - Inicializando...
 echo ========================================================
 echo.
 
-:: 1. Verificação do Python no sistema
-where python >nul 2>&1
-if %ERRORLEVEL% neq 0 (
-    where py >nul 2>&1
-    if %ERRORLEVEL% neq 0 (
-        echo [ERRO] Python não foi encontrado no seu computador!
-        echo Por favor, instale o Python 3.10 ou superior em python.org
-        echo e marque a opção "Add Python to PATH" durante a instalação.
-        echo.
-        pause
-        exit /b 1
-    ) else (
-        set PYTHON_CMD=py -3
-    )
-) else (
-    set PYTHON_CMD=python
+:: 1. Detecção Inteligente da Versão do Python
+:: Prioriza Python 3.12 ou 3.11 via py launcher para garantir compatibilidade com wheels pré-compiladas
+set PYTHON_CMD=
+
+py -3.12 --version >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set PYTHON_CMD=py -3.12
+    goto python_found
 )
 
-:: 2. Criação do Ambiente Virtual (.venv)
-if not exist ".venv" (
+py -3.11 --version >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set PYTHON_CMD=py -3.11
+    goto python_found
+)
+
+py -3.10 --version >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set PYTHON_CMD=py -3.10
+    goto python_found
+)
+
+where python >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set PYTHON_CMD=python
+    goto python_found
+)
+
+where py >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set PYTHON_CMD=py
+    goto python_found
+)
+
+echo [ERRO] Nenhuma instalação de Python foi encontrada no seu computador!
+echo Por favor, instale o Python 3.11 ou 3.12 (64-bit) em python.org
+echo e marque a opção "Add Python to PATH" durante a instalação.
+echo.
+pause
+exit /b 1
+
+:python_found
+echo Utilizando interpretador: %PYTHON_CMD%
+%PYTHON_CMD% --version
+
+:: 2. Criação / Validação do Ambiente Virtual (.venv)
+if not exist ".venv\installed.flag" (
+    if exist ".venv" (
+        echo Limpando ambiente virtual anterior para evitar conflito de pacotes...
+        rmdir /s /q ".venv" >nul 2>&1
+    )
     echo [1/4] Criando ambiente virtual Python (.venv)...
     %PYTHON_CMD% -m venv .venv
     if %ERRORLEVEL% neq 0 (
@@ -38,15 +69,26 @@ if not exist ".venv" (
 
 :: 3. Ativação do Ambiente Virtual
 call .venv\Scripts\activate.bat
+if %ERRORLEVEL% neq 0 (
+    echo [ERRO] Falha ao ativar o ambiente virtual .venv.
+    pause
+    exit /b 1
+)
 
-:: 4. Verificação e Instalação de Dependências
-echo [2/4] Verificando dependências do aplicativo...
+:: 4. Atualização das ferramentas de empacotamento e Instalação de Dependências
+echo [2/4] Verificando dependências pré-compiladas...
 if not exist ".venv\installed.flag" (
-    echo Instalando pacotes necessários (pode levar alguns minutos na primeira vez)...
-    python -m pip install --upgrade pip >nul 2>&1
-    python -m pip install -r requirements.txt
+    echo Atualizando pip, setuptools e wheel (essencial para reconhecer wheels binárias)...
+    python -m pip install --upgrade pip setuptools wheel
+
+    echo.
+    echo Baixando pacotes binários pré-compilados (sem compilação C++)...
+    python -m pip install --prefer-binary -r requirements.txt
     if %ERRORLEVEL% neq 0 (
+        echo.
         echo [ERRO] Falha ao instalar as dependências.
+        echo Dica: Certifique-se de que está utilizando Python 3.11 ou 3.12 de 64 bits.
+        echo.
         pause
         exit /b 1
     )
