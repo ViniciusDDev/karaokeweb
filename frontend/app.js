@@ -22,6 +22,11 @@ let micInterval = null;
 let singingSamples = [];
 let isMicActive = false;
 
+// Preview de áudio (5 segundos)
+let activePreviewAudio = null;
+let activePreviewBtn = null;
+let previewTimeout = null;
+
 // Função utilitária para obter/iniciar o AudioContext global
 function getAudioContext() {
   if (!audioCtx) {
@@ -30,17 +35,43 @@ function getAudioContext() {
   return audioCtx;
 }
 
-// Estado da Fila
+// Estado da Fila e Processamento
 let currentQueue = [];
 let activePlayingId = null;
+let activeProcessingId = null;
 
-// Elementos da UI
+// Elementos da UI - Header & Hardware
 const hwDesc = document.getElementById("hw-desc");
+const headerQueueCount = document.getElementById("header-queue-count");
+const btnToggleQueueView = document.getElementById("btn-toggle-queue-view");
+const btnHeaderStage = document.getElementById("btn-header-stage");
+
+// Elementos - Vistas do Fluxo Passo a Passo
+const viewStepSearch = document.getElementById("view-step-search");
+const viewStepResults = document.getElementById("view-step-results");
+const viewStepProcessing = document.getElementById("view-step-processing");
+const viewStepPlayer = document.getElementById("view-step-player");
+
+// Passo 1: Busca
 const formSearch = document.getElementById("form-search");
 const inputSearch = document.getElementById("input-search");
+
+// Passo 2: Resultados
+const resultsQueryTitle = document.getElementById("results-query-title");
 const searchResults = document.getElementById("search-results");
 
-const sectionKaraoke = document.getElementById("section-karaoke");
+// Passo 3: Processando
+const procThumb = document.getElementById("proc-thumb");
+const procSpinner = document.getElementById("proc-spinner");
+const procSingerBadge = document.getElementById("proc-singer-badge");
+const procTitle = document.getElementById("proc-title");
+const procArtist = document.getElementById("proc-artist");
+const procMsg = document.getElementById("proc-msg");
+const procPct = document.getElementById("proc-pct");
+const procBarFill = document.getElementById("proc-bar-fill");
+const btnProcPlayNow = document.getElementById("btn-proc-play-now");
+
+// Passo 4: Player / Palco
 const karaokeBg = document.getElementById("karaoke-bg");
 const karaokeOverlay = document.getElementById("karaoke-overlay");
 const currentTitle = document.getElementById("current-title");
@@ -57,6 +88,19 @@ const timeTotal = document.getElementById("time-total");
 const btnPlayPause = document.getElementById("btn-play-pause");
 const btnSkipSong = document.getElementById("btn-skip-song");
 const btnAdjustLyrics = document.getElementById("btn-adjust-lyrics");
+
+// Drawer da Fila (Menu Suspenso Direito)
+const drawerQueue = document.getElementById("drawer-queue");
+const drawerQueueBackdrop = document.getElementById("drawer-queue-backdrop");
+const drawerQueueBadge = document.getElementById("drawer-queue-badge");
+const drawerQueueList = document.getElementById("drawer-queue-list");
+const btnCloseQueueDrawer = document.getElementById("btn-close-queue-drawer");
+
+// Modal Mixer de Som
+const modalMixer = document.getElementById("modal-mixer");
+const btnOpenMixer = document.getElementById("btn-open-mixer");
+const btnCloseMixer = document.getElementById("btn-close-mixer");
+const btnSaveMixer = document.getElementById("btn-save-mixer");
 
 const sliderInst = document.getElementById("slider-inst");
 const sliderBacking = document.getElementById("slider-backing");
@@ -75,7 +119,7 @@ const micStatusDot = document.getElementById("mic-status-dot");
 const micBtnText = document.getElementById("mic-btn-text");
 const btnFinishSong = document.getElementById("btn-finish-song");
 
-// Modais
+// Modais Pontuação & Hall
 const modalScore = document.getElementById("modal-score");
 const finalScoreNumber = document.getElementById("final-score-number");
 const scorePraise = document.getElementById("score-praise");
@@ -87,13 +131,6 @@ const btnOpenHall = document.getElementById("btn-open-hall");
 const modalHallList = document.getElementById("modal-hall-list");
 const btnCloseHallModal = document.getElementById("btn-close-hall-modal");
 const hallListContainer = document.getElementById("hall-list-container");
-
-// Fila da Festa
-const mainQueueList = document.getElementById("main-queue-list");
-const queueBadgeMain = document.getElementById("queue-badge-main");
-const headerQueueCount = document.getElementById("header-queue-count");
-const btnToggleQueueView = document.getElementById("btn-toggle-queue-view");
-const sectionQueueContainer = document.getElementById("section-queue-container");
 
 // QR Code Widget
 const qrWidget = document.getElementById("qr-widget");
@@ -112,13 +149,72 @@ const btnSearchLrclib = document.getElementById("btn-search-lrclib");
 const lyricsOptionsList = document.getElementById("lyrics-options-list");
 const btnWhisperGenerate = document.getElementById("btn-whisper-generate");
 
-// 1. Inicialização
+// ========================================================
+// 1. GERENCIADOR DE TELAS (WIZARD PASSO A PASSO)
+// ========================================================
+window.showStep = function(stepName) {
+  stopAudioPreview();
+
+  viewStepSearch.classList.add("hidden");
+  viewStepResults.classList.add("hidden");
+  viewStepProcessing.classList.add("hidden");
+  viewStepPlayer.classList.add("hidden");
+
+  if (stepName === "search") {
+    viewStepSearch.classList.remove("hidden");
+    setTimeout(() => inputSearch && inputSearch.focus(), 50);
+  } else if (stepName === "results") {
+    viewStepResults.classList.remove("hidden");
+  } else if (stepName === "processing") {
+    viewStepProcessing.classList.remove("hidden");
+  } else if (stepName === "player") {
+    viewStepPlayer.classList.remove("hidden");
+  }
+
+  // Atualiza botão do palco no topo
+  if (currentSongData) {
+    btnHeaderStage.classList.remove("hidden");
+  } else {
+    btnHeaderStage.classList.add("hidden");
+  }
+};
+
+window.quickSearch = function(query) {
+  inputSearch.value = query;
+  formSearch.dispatchEvent(new Event("submit"));
+};
+
+// ========================================================
+// 2. CONTROLE DO MENU SUSPENSO DA FILA (DRAWER)
+// ========================================================
+window.toggleQueueDrawer = function(open) {
+  if (open) {
+    drawerQueueBackdrop.classList.remove("hidden");
+    drawerQueue.classList.remove("translate-x-full");
+  } else {
+    drawerQueue.classList.add("translate-x-full");
+    drawerQueueBackdrop.classList.add("hidden");
+  }
+};
+
+btnToggleQueueView.addEventListener("click", () => toggleQueueDrawer(true));
+btnCloseQueueDrawer.addEventListener("click", () => toggleQueueDrawer(false));
+drawerQueueBackdrop.addEventListener("click", () => toggleQueueDrawer(false));
+
+btnHeaderStage.addEventListener("click", () => {
+  showStep("player");
+});
+
+// ========================================================
+// 3. INICIALIZAÇÃO
+// ========================================================
 async function init() {
   setupEventListeners();
   checkHardware();
   initMicrophone();
   initPartyQrCode();
   connectQueueEvents();
+  showStep("search");
 }
 
 async function checkHardware() {
@@ -131,7 +227,7 @@ async function checkHardware() {
   }
 }
 
-// 2. Inicialização do QR Code para Conexão dos Celulares
+// 4. Inicialização do QR Code para Conexão dos Celulares
 async function initPartyQrCode() {
   try {
     const res = await fetch("/api/party/info");
@@ -155,20 +251,22 @@ async function initPartyQrCode() {
   }
 }
 
-// 3. Controle da Fila & Eventos SSE em Tempo Real
+// ========================================================
+// 5. CONTROLE DA FILA & EVENTOS SSE EM TEMPO REAL
+// ========================================================
 function connectQueueEvents() {
   const evtSource = new EventSource("/api/queue/events");
   evtSource.onmessage = (event) => {
     try {
       const queue = JSON.parse(event.data);
       currentQueue = queue;
-      renderQueueUI(queue);
+      renderDrawerQueue(queue);
 
-      // Se não há nenhuma música tocando no momento e a primeira estiver pronta, inicia automaticamente!
-      if (!isPlaying && !activePlayingId) {
-        const readySong = queue.find(item => item.status === "ready");
-        if (readySong) {
-          playQueueSong(readySong.id);
+      // Se temos uma música sendo processada e monitorada na tela de processamento:
+      if (activeProcessingId) {
+        const procItem = queue.find(item => item.id === activeProcessingId);
+        if (procItem) {
+          updateProcessingView(procItem);
         }
       }
     } catch (e) {
@@ -181,21 +279,21 @@ function connectQueueEvents() {
   };
 }
 
-function renderQueueUI(queue) {
+function renderDrawerQueue(queue) {
   const count = queue.length;
   headerQueueCount.textContent = `${count}/20`;
-  queueBadgeMain.textContent = `${count} / 20`;
+  drawerQueueBadge.textContent = `${count}/20`;
 
   if (count === 0) {
-    mainQueueList.innerHTML = `
-      <p class="col-span-full text-center text-slate-400 py-6 text-sm">
-        Nenhuma música na fila. Adicione abaixo ou convide amigos para pedir pelo celular via QR Code!
+    drawerQueueList.innerHTML = `
+      <p class="text-center text-slate-500 text-xs py-10">
+        A fila está vazia. Adicione músicas pelo sistema de busca ou celular!
       </p>
     `;
     return;
   }
 
-  mainQueueList.innerHTML = queue.map((item, idx) => {
+  drawerQueueList.innerHTML = queue.map((item, idx) => {
     let actionBtn = "";
     let statusClass = "border-slate-800 bg-slate-950/80";
 
@@ -224,9 +322,9 @@ function renderQueueUI(queue) {
     }
 
     return `
-      <div class="border ${statusClass} rounded-xl p-3 flex items-center gap-3 shadow-md hover:border-slate-700 transition">
+      <div class="border ${statusClass} rounded-2xl p-3 flex items-center gap-3 shadow-md hover:border-slate-700 transition">
         <span class="text-sm font-mono font-bold ${item.status === 'playing' ? 'text-emerald-400' : 'text-slate-500'}">#${idx + 1}</span>
-        <img src="${item.thumbnail}" class="w-14 h-11 object-cover rounded-lg bg-slate-900 flex-shrink-0">
+        <img src="${item.thumbnail}" class="w-14 h-11 object-cover rounded-xl bg-slate-900 flex-shrink-0">
         <div class="flex-1 min-w-0">
           <h4 class="text-xs font-bold text-slate-100 truncate">${item.title}</h4>
           <p class="text-[11px] text-slate-400 truncate">
@@ -236,8 +334,8 @@ function renderQueueUI(queue) {
         <div class="flex items-center gap-2 flex-shrink-0">
           ${actionBtn}
           ${item.status !== 'playing' ? `
-            <button onclick="removeQueueSong('${item.id}')" class="text-slate-500 hover:text-red-400 text-xs p-1" title="Remover da fila">
-              ✕
+            <button onclick="removeQueueSong('${item.id}')" class="text-slate-500 hover:text-red-400 text-sm p-1.5 rounded-lg hover:bg-slate-800 transition" title="Remover da fila">
+              🗑️
             </button>
           ` : ''}
         </div>
@@ -246,59 +344,118 @@ function renderQueueUI(queue) {
   }).join("");
 }
 
-// 4. Execução de Música da Fila
+// ========================================================
+// 6. EXECUÇÃO DE MÚSICA DA FILA & REMOÇÃO
+// ========================================================
 window.playQueueSong = async function(itemId) {
   try {
     const res = await fetch(`/api/queue/${itemId}/play`, { method: "POST" });
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.detail || "Não foi possível reproduzir.");
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      alert("Erro do servidor ao iniciar música: " + text.slice(0, 160));
       return;
     }
-    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.detail || "Não foi possível reproduzir a música.");
+      return;
+    }
+
     activePlayingId = itemId;
-    loadKaraokeTrack(data.item);
+    toggleQueueDrawer(false);
+    showStep("player");
+    await loadKaraokeTrack(data.item);
   } catch (err) {
-    alert("Erro ao tocar música: " + err.message);
+    alert("Erro de conexão ao tocar música: " + err.message);
   }
 };
 
 window.removeQueueSong = async function(itemId) {
   try {
     await fetch(`/api/queue/${itemId}`, { method: "DELETE" });
+    if (activeProcessingId === itemId) {
+      activeProcessingId = null;
+      showStep("search");
+    }
   } catch (err) {
     alert("Erro ao remover: " + err.message);
   }
 };
 
-// 5. Pular Música (Skip)
-btnSkipSong.addEventListener("click", async () => {
-  stopPlayback();
-  try {
-    const res = await fetch("/api/queue/skip", { method: "POST" });
-    const data = await res.json();
-    if (data.next_item) {
-      activePlayingId = data.next_item.id;
-      loadKaraokeTrack(data.next_item);
-    } else {
-      activePlayingId = null;
-      sectionKaraoke.classList.add("hidden");
-    }
-  } catch (err) {
-    console.error("Erro ao pular:", err);
+// ========================================================
+// 7. PREVIEW DE ÁUDIO DE 5 SEGUNDOS
+// ========================================================
+function stopAudioPreview() {
+  if (previewTimeout) {
+    clearTimeout(previewTimeout);
+    previewTimeout = null;
   }
-});
+  if (activePreviewAudio) {
+    try {
+      activePreviewAudio.pause();
+      activePreviewAudio.currentTime = 0;
+    } catch (e) {}
+    activePreviewAudio = null;
+  }
+  if (activePreviewBtn) {
+    activePreviewBtn.innerHTML = `<span>▶ 5s Preview</span>`;
+    activePreviewBtn.classList.remove("bg-red-500/30", "text-red-300", "border-red-500/40");
+    activePreviewBtn = null;
+  }
+}
 
-// 6. Busca no YouTube e Adição à Fila
+window.playAudioPreview = function(videoId, btn) {
+  if (activePreviewBtn === btn) {
+    stopAudioPreview();
+    return;
+  }
+
+  stopAudioPreview();
+  activePreviewBtn = btn;
+  btn.innerHTML = `<span class="animate-pulse">⏳ Carregando...</span>`;
+
+  const audio = new Audio(`/api/preview/${videoId}`);
+  activePreviewAudio = audio;
+
+  audio.onplaying = () => {
+    btn.innerHTML = `<span>⏹ Parar (5s)</span>`;
+    btn.classList.add("bg-red-500/30", "text-red-300", "border-red-500/40");
+
+    previewTimeout = setTimeout(() => {
+      stopAudioPreview();
+    }, 5000);
+  };
+
+  audio.onended = () => stopAudioPreview();
+  audio.onerror = () => {
+    btn.innerHTML = `<span>⚠️ Erro Preview</span>`;
+    setTimeout(() => stopAudioPreview(), 2000);
+  };
+
+  audio.play().catch(() => {
+    btn.innerHTML = `<span>⚠️ Clique p/ Tocar</span>`;
+    setTimeout(() => stopAudioPreview(), 2000);
+  });
+};
+
+// ========================================================
+// 8. BUSCA NO YOUTUBE (PASSO 1 -> PASSO 2)
+// ========================================================
 formSearch.addEventListener("submit", async (e) => {
   e.preventDefault();
   const query = inputSearch.value.trim();
   if (!query) return;
 
+  resultsQueryTitle.textContent = `Resultados para "${query}"`;
+  showStep("results");
+
   searchResults.innerHTML = `
-    <div class="col-span-full py-8 text-center text-slate-400 flex flex-col items-center gap-2">
-      <div class="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
-      <p class="text-sm">Buscando músicas no YouTube...</p>
+    <div class="col-span-full py-12 text-center text-slate-400 flex flex-col items-center gap-3">
+      <div class="w-10 h-10 border-3 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
+      <p class="text-sm font-medium">Buscando versões e faixas no YouTube...</p>
     </div>
   `;
 
@@ -307,42 +464,59 @@ formSearch.addEventListener("submit", async (e) => {
     const data = await res.json();
 
     if (!data.results || data.results.length === 0) {
-      searchResults.innerHTML = `<p class="col-span-full text-center text-slate-400 py-6">Nenhum resultado encontrado.</p>`;
+      searchResults.innerHTML = `<p class="col-span-full text-center text-slate-400 py-10">Nenhum resultado encontrado para esta busca.</p>`;
       return;
     }
 
     renderSearchResults(data.results);
   } catch (err) {
-    searchResults.innerHTML = `<p class="col-span-full text-center text-red-400 py-6">Erro ao buscar: ${err.message}</p>`;
+    searchResults.innerHTML = `<p class="col-span-full text-center text-red-400 py-10">Erro ao buscar: ${err.message}</p>`;
   }
 });
 
 function renderSearchResults(videos) {
   searchResults.innerHTML = videos.map((vid) => `
-    <div class="bg-slate-950/70 border border-slate-800 rounded-2xl overflow-hidden flex flex-col hover:border-slate-700 transition group shadow-md">
-      <div class="relative aspect-video w-full overflow-hidden bg-slate-900">
+    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden flex flex-col hover:border-slate-700 transition group shadow-lg">
+      <div class="relative aspect-video w-full overflow-hidden bg-slate-950">
         <img src="${vid.thumbnail}" alt="${vid.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
         <span class="absolute bottom-2 right-2 bg-black/80 px-2 py-0.5 rounded text-[11px] font-mono text-slate-200">
           ${formatTime(vid.duration)}
         </span>
       </div>
-      <div class="p-3.5 flex-1 flex flex-col justify-between gap-3">
+      <div class="p-4 flex-1 flex flex-col justify-between gap-3">
         <div>
           <h4 class="font-bold text-xs text-slate-100 line-clamp-2 leading-snug">${vid.title}</h4>
           <p class="text-[11px] text-slate-400 mt-1 truncate">${vid.artist}</p>
         </div>
-        <button
-          onclick='addSongToMainQueue(${JSON.stringify(vid).replace(/'/g, "&apos;")})'
-          class="w-full bg-sky-500/20 hover:bg-sky-500 text-sky-400 hover:text-white font-semibold text-xs py-2 rounded-xl border border-sky-500/30 hover:border-transparent transition flex items-center justify-center gap-1.5 active:scale-95"
-        >
-          <span>➕ Adicionar à Fila</span>
-        </button>
+
+        <div class="flex flex-col gap-2 pt-1">
+          <!-- Botão Preview 5s -->
+          <button
+            onclick="playAudioPreview('${vid.video_id}', this)"
+            class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs py-1.5 rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5 active:scale-95"
+          >
+            <span>▶ 5s Preview</span>
+          </button>
+
+          <!-- Botão Adicionar à Fila -->
+          <button
+            onclick='addSongToMainQueue(${JSON.stringify(vid).replace(/'/g, "&apos;")})'
+            class="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs py-2 rounded-xl transition flex items-center justify-center gap-1.5 shadow-md shadow-sky-500/20 active:scale-95"
+          >
+            <span>➕ Adicionar à Fila</span>
+          </button>
+        </div>
       </div>
     </div>
   `).join("");
 }
 
+// ========================================================
+// 9. ADIÇÃO À FILA E TELA DE PROCESSAMENTO (PASSO 2 -> PASSO 3)
+// ========================================================
 window.addSongToMainQueue = async function(vid) {
+  stopAudioPreview();
+
   try {
     const res = await fetch("/api/queue", {
       method: "POST",
@@ -357,21 +531,44 @@ window.addSongToMainQueue = async function(vid) {
       })
     });
 
+    const data = await res.json();
     if (!res.ok) {
-      const err = await res.json();
-      alert(err.detail || "Erro ao adicionar à fila.");
+      alert(data.detail || "Erro ao adicionar música à fila.");
       return;
     }
 
-    inputSearch.value = "";
-    searchResults.innerHTML = "";
-    sectionQueueContainer.scrollIntoView({ behavior: "smooth" });
+    // Configura a tela de processamento para essa música
+    const queueItem = data.item;
+    activeProcessingId = queueItem.id;
+    updateProcessingView(queueItem);
+    showStep("processing");
   } catch (err) {
-    alert("Falha de rede: " + err.message);
+    alert("Falha de conexão: " + err.message);
   }
 };
 
-// 7. Carregamento do Karaokê no Web Audio API
+function updateProcessingView(item) {
+  procThumb.src = item.thumbnail;
+  procTitle.textContent = item.title;
+  procArtist.textContent = item.artist;
+  procSingerBadge.textContent = `Cantor(a): ${item.requested_by || "Palco"}`;
+  procMsg.textContent = item.message;
+  procPct.textContent = `${item.percent}%`;
+  procBarFill.style.width = `${item.percent}%`;
+
+  if (item.status === "ready") {
+    procSpinner.classList.add("hidden");
+    btnProcPlayNow.classList.remove("hidden");
+    btnProcPlayNow.onclick = () => playQueueSong(item.id);
+  } else {
+    procSpinner.classList.remove("hidden");
+    btnProcPlayNow.classList.add("hidden");
+  }
+}
+
+// ========================================================
+// 10. CARREGAMENTO DO KARAOKÊ NO WEB AUDIO API (PASSO 4)
+// ========================================================
 async function loadKaraokeTrack(songData) {
   stopPlayback();
   currentSongData = songData;
@@ -382,8 +579,7 @@ async function loadKaraokeTrack(songData) {
   currentSingerBadge.textContent = `🎤 Cantor(a): ${songData.requested_by || "Convidado"}`;
   karaokeBg.style.backgroundImage = `url('${songData.thumbnail}')`;
 
-  sectionKaraoke.classList.remove("hidden");
-  sectionKaraoke.scrollIntoView({ behavior: "smooth" });
+  btnHeaderStage.classList.remove("hidden");
 
   const ctx = getAudioContext();
   if (ctx.state === "suspended") {
@@ -435,7 +631,9 @@ async function fetchAudioBuffer(url) {
   return await audioCtx.decodeAudioData(arrayBuffer);
 }
 
-// 8. Controle de Reprodução Sincronizada
+// ========================================================
+// 11. CONTROLE DE REPRODUÇÃO E SINCRONIA DAS LETRAS
+// ========================================================
 function startPlayback() {
   if (!audioBuffers.instrumental) return;
 
@@ -507,7 +705,6 @@ function updatePlaybackProgress() {
   requestAnimationFrame(updatePlaybackProgress);
 }
 
-// 9. Atualização das Letras em Tempo Real
 function updateLyrics(currentTime) {
   if (!currentLyrics || currentLyrics.length === 0) return;
 
@@ -527,7 +724,29 @@ function updateLyrics(currentTime) {
   }
 }
 
-// 10. Recurso "Ajustar Letra"
+// Pular Música (Skip)
+btnSkipSong.addEventListener("click", async () => {
+  stopPlayback();
+  try {
+    const res = await fetch("/api/queue/skip", { method: "POST" });
+    const data = await res.json();
+    if (data.next_item) {
+      activePlayingId = data.next_item.id;
+      loadKaraokeTrack(data.next_item);
+    } else {
+      activePlayingId = null;
+      currentSongData = null;
+      btnHeaderStage.classList.add("hidden");
+      showStep("search");
+    }
+  } catch (err) {
+    console.error("Erro ao pular:", err);
+  }
+});
+
+// ========================================================
+// 12. AJUSTAR LETRA (LRCLIB & WHISPER)
+// ========================================================
 btnAdjustLyrics.addEventListener("click", () => {
   if (!currentSongData) return;
   modalAdjustLyrics.classList.remove("hidden");
@@ -631,7 +850,16 @@ btnWhisperGenerate.addEventListener("click", async () => {
   }
 });
 
-// 11. Alternância de Visualização e Modais
+// ========================================================
+// 13. MESA DE SOM & MODAL DE MIXER
+// ========================================================
+btnOpenMixer.addEventListener("click", () => modalMixer.classList.remove("hidden"));
+btnCloseMixer.addEventListener("click", () => modalMixer.classList.add("hidden"));
+btnSaveMixer.addEventListener("click", () => modalMixer.classList.add("hidden"));
+
+// ========================================================
+// 14. QR CODE & HALL DA FAMA
+// ========================================================
 btnMinimizeQr.addEventListener("click", () => {
   qrCard.classList.add("hidden");
   qrPillBtn.classList.remove("hidden");
@@ -650,10 +878,6 @@ btnToggleQrWidget.addEventListener("click", () => {
     qrCard.classList.add("hidden");
     qrPillBtn.classList.remove("hidden");
   }
-});
-
-btnToggleQueueView.addEventListener("click", () => {
-  sectionQueueContainer.scrollIntoView({ behavior: "smooth" });
 });
 
 btnOpenHall.addEventListener("click", async () => {
@@ -686,7 +910,9 @@ btnCloseHallModal.addEventListener("click", () => {
   modalHallList.classList.add("hidden");
 });
 
-// 12. Microfone, Retorno ao Vivo e Avaliação
+// ========================================================
+// 15. MICROFONE, RETORNO AO VIVO E AVALIAÇÃO
+// ========================================================
 function setupMicAudioNodes(ctx) {
   if (!micStream) return;
   try {
@@ -695,19 +921,16 @@ function setupMicAudioNodes(ctx) {
     }
     micSource = ctx.createMediaStreamSource(micStream);
 
-    // Analyser para o medidor de afinação e pontuação
     micAnalyser = ctx.createAnalyser();
     micAnalyser.fftSize = 512;
     micSource.connect(micAnalyser);
 
-    // Nó de ganho para o retorno do microfone (alto-falantes / fone de ouvido)
     if (!micGainNode) {
       micGainNode = ctx.createGain();
     }
     const currentVol = sliderMic ? parseFloat(sliderMic.value) : 80;
     micGainNode.gain.value = currentVol / 100;
 
-    // Roteia a voz do cantor diretamente para os alto-falantes / saída principal
     micSource.connect(micGainNode);
     micGainNode.connect(ctx.destination);
   } catch (err) {
@@ -722,7 +945,6 @@ async function initMicrophone() {
       await ctx.resume();
     }
 
-    // Solicita microfone com cancelamento de eco e supressão de ruído para evitar microfonia/feedback
     micStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -733,7 +955,7 @@ async function initMicrophone() {
     });
 
     isMicActive = true;
-    micBtnText.textContent = "Microfone Ativo";
+    micBtnText.textContent = "Mic Ativo";
     micStatusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
 
     setupMicAudioNodes(ctx);
@@ -741,7 +963,7 @@ async function initMicrophone() {
   } catch (e) {
     console.warn("Permissão de microfone pendente ou bloqueada:", e);
     isMicActive = false;
-    micBtnText.textContent = "Ativar Microfone";
+    micBtnText.textContent = "Ativar Mic";
     micStatusDot.className = "w-2.5 h-2.5 rounded-full bg-slate-500";
   }
 }
@@ -802,7 +1024,6 @@ formHall.addEventListener("submit", async (e) => {
   });
 
   modalScore.classList.add("hidden");
-  // Avança automaticamente para a próxima música da fila pronta
   btnSkipSong.click();
 });
 
@@ -811,7 +1032,9 @@ btnCloseScore.addEventListener("click", () => {
   btnSkipSong.click();
 });
 
-// 13. Event Listeners Básicos
+// ========================================================
+// 16. EVENT LISTENERS GERAIS
+// ========================================================
 function setupEventListeners() {
   btnPlayPause.addEventListener("click", () => {
     if (isPlaying) pausePlayback();
@@ -878,14 +1101,13 @@ function setupEventListeners() {
         micSource = null;
       }
       isMicActive = false;
-      micBtnText.textContent = "Ativar Microfone";
+      micBtnText.textContent = "Ativar Mic";
       micStatusDot.className = "w-2.5 h-2.5 rounded-full bg-slate-500";
     } else {
       await initMicrophone();
     }
   });
 
-  // Retoma o AudioContext no primeiro gesto do usuário caso suspenso pelo navegador
   document.addEventListener("click", () => {
     if (audioCtx && audioCtx.state === "suspended") {
       audioCtx.resume();

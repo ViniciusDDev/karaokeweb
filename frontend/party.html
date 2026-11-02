@@ -178,18 +178,66 @@
               <h4 class="text-xs font-bold text-slate-100 truncate">${vid.title}</h4>
               <p class="text-[11px] text-slate-400 truncate">${vid.artist}</p>
             </div>
-            <button
-              onclick='addToQueue(${JSON.stringify(vid).replace(/'/g, "&apos;")})'
-              class="flex-shrink-0 bg-sky-500 hover:bg-sky-400 active:scale-95 text-white font-bold text-xs px-3 py-2 rounded-lg transition"
-            >
-              Pedir
-            </button>
+            <div class="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                onclick="playMobilePreview('${vid.video_id}', this)"
+                class="bg-slate-800 hover:bg-slate-700 active:scale-95 text-sky-400 font-semibold text-[11px] px-2.5 py-2 rounded-lg transition border border-slate-700"
+                title="Ouvir 5s"
+              >
+                ▶ 5s
+              </button>
+              <button
+                onclick='addToQueue(${JSON.stringify(vid).replace(/'/g, "&apos;")})'
+                class="bg-sky-500 hover:bg-sky-400 active:scale-95 text-white font-bold text-xs px-3 py-2 rounded-lg transition shadow-sm"
+              >
+                Pedir
+              </button>
+            </div>
           </div>
         `).join("");
       } catch (err) {
         searchResults.innerHTML = `<p class="text-center text-red-400 py-6 text-xs">Erro na busca: ${err.message}</p>`;
       }
     });
+
+    // 4.1 Preview de Áudio de 5 segundos no Mobile
+    let mobilePreviewAudio = null;
+    let mobilePreviewTimer = null;
+
+    window.playMobilePreview = function(videoId, btn) {
+      if (mobilePreviewAudio) {
+        mobilePreviewAudio.pause();
+        mobilePreviewAudio = null;
+        clearTimeout(mobilePreviewTimer);
+        document.querySelectorAll("[data-mobile-preview]").forEach(b => {
+          b.textContent = "▶ 5s";
+          b.classList.remove("text-amber-400", "border-amber-400");
+        });
+      }
+
+      if (btn.dataset.mobilePreview === "true") {
+        btn.dataset.mobilePreview = "false";
+        btn.textContent = "▶ 5s";
+        btn.classList.remove("text-amber-400", "border-amber-400");
+        return;
+      }
+
+      const audio = new Audio(`/api/preview/${videoId}`);
+      mobilePreviewAudio = audio;
+      btn.dataset.mobilePreview = "true";
+      btn.textContent = "⏹ 5s";
+      btn.classList.add("text-amber-400", "border-amber-400");
+
+      audio.play().catch(e => console.warn("Preview:", e));
+
+      mobilePreviewTimer = setTimeout(() => {
+        audio.pause();
+        mobilePreviewAudio = null;
+        btn.dataset.mobilePreview = "false";
+        btn.textContent = "▶ 5s";
+        btn.classList.remove("text-amber-400", "border-amber-400");
+      }, 5000);
+    };
 
     // 5. Adicionar à Fila
     window.addToQueue = async function(vid) {
@@ -217,6 +265,22 @@
         showToast(`Música de ${singer} adicionada à fila!`);
       } catch (err) {
         alert("Falha na conexão: " + err.message);
+      }
+    };
+
+    // 5.1 Remover da Fila pelo Celular
+    window.removeQueueSongMobile = async function(itemId, songTitle) {
+      if (!confirm(`Remover "${songTitle}" da fila?`)) return;
+      try {
+        const res = await fetch(`/api/queue/${itemId}`, { method: "DELETE" });
+        if (res.ok) {
+          showToast("Música removida da fila!");
+        } else {
+          const err = await res.json();
+          alert(err.detail || "Não foi possível remover.");
+        }
+      } catch (err) {
+        alert("Erro ao remover: " + err.message);
       }
     };
 
@@ -256,6 +320,8 @@
           statusBadge = `<span class="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px]">Aguardando (${idx + 1}º)</span>`;
         }
 
+        const canDelete = item.status !== "playing" && item.status !== "processing";
+
         return `
           <div class="bg-slate-900/90 border ${item.status === 'playing' ? 'border-emerald-500/50 bg-emerald-950/20' : 'border-slate-800'} rounded-xl p-3 flex items-center gap-3">
             <span class="text-xs font-mono font-bold ${item.status === 'playing' ? 'text-emerald-400' : 'text-slate-500'}">#${idx + 1}</span>
@@ -265,6 +331,15 @@
               <p class="text-[11px] text-slate-400 truncate">Cantor(a): <span class="text-sky-300 font-medium">${item.requested_by}</span></p>
               <div class="mt-1">${statusBadge}</div>
             </div>
+            ${canDelete ? `
+              <button
+                onclick='removeQueueSongMobile("${item.id}", ${JSON.stringify(item.title)})'
+                class="p-2 text-slate-500 hover:text-red-400 active:scale-90 rounded-lg hover:bg-slate-800/80 transition flex-shrink-0"
+                title="Remover da fila"
+              >
+                🗑️
+              </button>
+            ` : ''}
           </div>
         `;
       }).join("");

@@ -42,9 +42,15 @@ class QueueManager:
         self._new_item_event = asyncio.Event()
         self._listeners: List[asyncio.Queue] = []
         self._running = True
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     def start_worker(self):
         """Inicia a task assíncrona do worker de background."""
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
+
         if self._worker_task is None or self._worker_task.done():
             self._worker_task = asyncio.create_task(self._queue_worker_loop())
             logger.info("Worker da fila de processamento em background iniciado.")
@@ -55,6 +61,15 @@ class QueueManager:
         self._new_item_event.set()
         if self._worker_task:
             self._worker_task.cancel()
+
+    def trigger_broadcast(self):
+        """Dispara a atualização SSE para todos os clientes de forma 100% segura em qualquer thread/contexto."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.broadcast_update())
+        except RuntimeError:
+            if self._loop and self._loop.is_running():
+                asyncio.run_coroutine_threadsafe(self.broadcast_update(), self._loop)
 
     async def broadcast_update(self):
         """Notifica todos os clientes conectados (SSE) com o estado atual da fila."""
@@ -99,7 +114,7 @@ class QueueManager:
         )
         self.queue.append(new_item)
         self._new_item_event.set()
-        asyncio.create_task(self.broadcast_update())
+        self.trigger_broadcast()
         logger.info(f"Música adicionada à fila: '{title}' por '{new_item.requested_by}' (ID: {item_id})")
         return new_item
 
@@ -116,7 +131,7 @@ class QueueManager:
                     # Não remove item enquanto estiver em processamento ativo
                     return False
                 self.queue.pop(idx)
-                asyncio.create_task(self.broadcast_update())
+                self.trigger_broadcast()
                 return True
         return False
 
@@ -130,7 +145,7 @@ class QueueManager:
                 item.status = "finished"
 
         if target:
-            asyncio.create_task(self.broadcast_update())
+            self.trigger_broadcast()
         return target
 
     def skip_current(self) -> Optional[QueueItem]:
@@ -144,17 +159,17 @@ class QueueManager:
         for item in self.queue:
             if item.status == "ready":
                 item.status = "playing"
-                asyncio.create_task(self.broadcast_update())
+                self.trigger_broadcast()
                 return item
 
-        asyncio.create_task(self.broadcast_update())
+        self.trigger_broadcast()
         return None
 
     def update_lyrics(self, item_id: str, new_lyrics: Dict[str, Any]) -> bool:
         item = self.get_item(item_id)
         if item:
             item.lyrics = new_lyrics
-            asyncio.create_task(self.broadcast_update())
+            self.trigger_broadcast()
             return True
         return False
 

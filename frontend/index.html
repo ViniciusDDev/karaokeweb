@@ -19,8 +19,8 @@
     .font-brand { font-family: 'Poppins', sans-serif; }
     .lyric-active {
       color: #38bdf8;
-      text-shadow: 0 0 20px rgba(56, 189, 248, 0.7);
-      transform: scale(1.04);
+      text-shadow: 0 0 25px rgba(56, 189, 248, 0.8);
+      transform: scale(1.05);
       transition: all 0.25s ease-out;
     }
   </style>
@@ -28,8 +28,8 @@
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-sky-500 selection:text-white">
 
   <!-- Header da Aplicação -->
-  <header class="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40 px-6 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-3">
+  <header class="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3 cursor-pointer" onclick="showStep('search')">
       <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20 text-xl font-bold">
         🎤
       </div>
@@ -37,237 +37,364 @@
         <h1 class="text-xl font-brand font-extrabold tracking-tight bg-gradient-to-r from-sky-400 via-indigo-300 to-pink-400 bg-clip-text text-transparent">
           OpenKaraoke
         </h1>
-        <p class="text-xs text-slate-400">1-Click Local Karaokê</p>
+        <p class="text-[11px] text-slate-400">1-Click Local Karaokê</p>
       </div>
     </div>
 
-    <!-- Indicador de Hardware, Fila & Hall da Fama -->
-    <div class="flex items-center gap-3 sm:gap-4">
-      <div id="hw-badge" class="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-800/80 border border-slate-700 text-slate-300">
+    <!-- Indicador de Hardware, Ações & Fila -->
+    <div class="flex items-center gap-2 sm:gap-3">
+      <div id="hw-badge" class="hidden md:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-800/80 border border-slate-700 text-slate-300">
         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
         <span id="hw-desc">Detectando hardware...</span>
       </div>
 
-      <button id="btn-toggle-queue-view" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/30 hover:bg-sky-500/20 transition">
+      <!-- Botão Voltar ao Palco (aparece quando uma música está ativa) -->
+      <button id="btn-header-stage" class="hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-pink-500/20 text-pink-300 border border-pink-500/40 hover:bg-pink-500/30 transition animate-pulse">
+        <span>🎤 Palco Ativo</span>
+      </button>
+
+      <!-- Botão para Abrir Fila no Menu Suspenso Direito -->
+      <button id="btn-toggle-queue-view" class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/30 hover:bg-sky-500/20 transition shadow-sm">
         <span>📋 Fila:</span>
         <span id="header-queue-count" class="font-bold">0/20</span>
       </button>
 
+      <!-- Botão QR Code Festa -->
       <button id="btn-toggle-qr-widget" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/20 transition">
-        <span>📱 Celular / Festa</span>
+        <span>📱 Celular</span>
       </button>
 
-      <button id="btn-open-hall" class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition">
-        🏆 Hall da Fama
+      <!-- Botão Hall da Fama -->
+      <button id="btn-open-hall" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition">
+        🏆 Hall
       </button>
     </div>
   </header>
 
-  <!-- Conteúdo Principal -->
-  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-6">
+  <!-- Conteúdo Principal com Fluxo Passo a Passo -->
+  <main class="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-center">
 
-    <!-- Seção do Palco / Karaokê Player -->
-    <section id="section-karaoke" class="hidden flex flex-col gap-6">
+    <!-- ======================================================== -->
+    <!-- PASSO 1: TELA INICIAL DE BUSCA (Clean & Minimalista)      -->
+    <!-- ======================================================== -->
+    <section id="view-step-search" class="w-full flex flex-col items-center justify-center py-10 sm:py-16 text-center">
+      <div class="max-w-2xl w-full flex flex-col items-center gap-6">
+        <div class="w-20 h-20 rounded-3xl bg-gradient-to-tr from-sky-500/20 to-indigo-500/20 border border-sky-500/30 flex items-center justify-center text-4xl shadow-xl shadow-sky-500/10">
+          🎵
+        </div>
 
-      <!-- Palco de Karaokê (Capa de Fundo + Letras Sincronizadas) -->
-      <div class="relative w-full rounded-3xl overflow-hidden min-h-[420px] sm:min-h-[480px] border border-slate-800 flex flex-col justify-between shadow-2xl bg-slate-950">
+        <div>
+          <h2 class="text-3xl sm:text-5xl font-brand font-black text-white tracking-tight">
+            Qual música vamos cantar?
+          </h2>
+          <p class="text-sm sm:text-base text-slate-400 mt-2">
+            Pesquise qualquer música ou artista no YouTube para isolar as faixas com IA e cantar ao vivo.
+          </p>
+        </div>
+
+        <form id="form-search" class="w-full flex gap-2 sm:gap-3 mt-2 shadow-2xl">
+          <input
+            type="text"
+            id="input-search"
+            placeholder="Ex: Evidências, Bohemian Rhapsody, Dua Lipa, Tim Maia..."
+            class="flex-1 bg-slate-900 border border-slate-700/80 rounded-2xl px-5 py-4 text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition"
+            required
+            autofocus
+          />
+          <button
+            type="submit"
+            id="btn-search"
+            class="bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-base px-7 py-4 rounded-2xl transition flex items-center gap-2 shadow-lg shadow-sky-500/25 active:scale-95"
+          >
+            <span>Buscar</span>
+          </button>
+        </form>
+
+        <!-- Sugestões Rápidas -->
+        <div class="flex flex-wrap items-center justify-center gap-2 mt-2">
+          <span class="text-xs text-slate-500">Sugestões rápidas:</span>
+          <button onclick="quickSearch('Evidências Chitãozinho')" class="text-xs bg-slate-900 hover:bg-slate-800 text-slate-300 px-3 py-1.5 rounded-xl border border-slate-800 transition">Evidências</button>
+          <button onclick="quickSearch('Bohemian Rhapsody Queen')" class="text-xs bg-slate-900 hover:bg-slate-800 text-slate-300 px-3 py-1.5 rounded-xl border border-slate-800 transition">Queen</button>
+          <button onclick="quickSearch('Não Quero Dinheiro Tim Maia')" class="text-xs bg-slate-900 hover:bg-slate-800 text-slate-300 px-3 py-1.5 rounded-xl border border-slate-800 transition">Tim Maia</button>
+          <button onclick="quickSearch('Rolling in the Deep Adele')" class="text-xs bg-slate-900 hover:bg-slate-800 text-slate-300 px-3 py-1.5 rounded-xl border border-slate-800 transition">Adele</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- PASSO 2: RESULTADOS DA BUSCA (Com Preview de 5 segundos)  -->
+    <!-- ======================================================== -->
+    <section id="view-step-results" class="hidden w-full flex flex-col gap-6">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+        <div>
+          <button onclick="showStep('search')" class="text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1.5 mb-1">
+            <span>← Voltar à Busca</span>
+          </button>
+          <h2 class="text-xl sm:text-2xl font-brand font-bold text-white" id="results-query-title">
+            Músicas Encontradas
+          </h2>
+        </div>
+        <p class="text-xs text-slate-400 hidden sm:block">
+          Ouça 5 segundos para confirmar a versão exata antes de adicionar à fila.
+        </p>
+      </div>
+
+      <!-- Grid de Resultados -->
+      <div id="search-results" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- PASSO 3: TELA DE PROCESSAMENTO / SALA DE ESPERA          -->
+    <!-- ======================================================== -->
+    <section id="view-step-processing" class="hidden w-full flex flex-col items-center justify-center py-8">
+      <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-10 max-w-xl w-full shadow-2xl flex flex-col items-center text-center gap-6">
         
-        <!-- Imagem de Fundo (Capa do Álbum) com Blur -->
-        <div id="karaoke-bg" class="absolute inset-0 bg-cover bg-center transition-all duration-700 scale-105 filter blur-sm"></div>
+        <!-- Thumbnail da música selecionada -->
+        <div class="relative w-48 h-32 rounded-2xl overflow-hidden shadow-lg border border-slate-700 bg-slate-950">
+          <img id="proc-thumb" src="" class="w-full h-full object-cover">
+          <div id="proc-spinner" class="absolute inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center">
+            <div class="w-10 h-10 border-3 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        </div>
 
-        <!-- Overlay de Contraste Ajustável -->
-        <div id="karaoke-overlay" class="absolute inset-0 bg-slate-950/80 transition-all duration-200"></div>
+        <div>
+          <span id="proc-singer-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+            Cantor(a): Palco
+          </span>
+          <h3 id="proc-title" class="text-lg sm:text-xl font-brand font-bold text-white mt-2">
+            Título da Música
+          </h3>
+          <p id="proc-artist" class="text-xs text-slate-400 mt-0.5">Artista</p>
+        </div>
 
-        <!-- Barra Superior do Palco: Título, Cantor e Ações -->
-        <div class="relative z-10 p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-slate-950/40 backdrop-blur-sm">
+        <!-- Barra de Progresso -->
+        <div class="w-full flex flex-col gap-2">
+          <div class="flex items-center justify-between text-xs">
+            <span id="proc-msg" class="text-slate-300 font-medium truncate max-w-[280px]">Processando com IA...</span>
+            <span id="proc-pct" class="font-mono text-sky-400 font-bold">25%</span>
+          </div>
+          <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden p-0.5">
+            <div id="proc-bar-fill" class="h-full bg-gradient-to-r from-sky-500 to-indigo-500 rounded-full transition-all duration-300" style="width: 25%"></div>
+          </div>
+        </div>
+
+        <!-- Ação Quando Pronta -->
+        <div id="proc-actions" class="w-full flex flex-col gap-2.5 pt-2">
+          <button
+            id="btn-proc-play-now"
+            class="hidden w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm py-4 rounded-2xl transition shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2 active:scale-95 animate-bounce"
+          >
+            <span>🎤 Subir ao Palco e Iniciar Música!</span>
+          </button>
+          
+          <button
+            onclick="showStep('search')"
+            class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs py-3 rounded-xl transition"
+          >
+            + Adicionar Mais Músicas à Fila
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- PASSO 4: PALCO DO KARAOKÊ (Player em Destaque)            -->
+    <!-- ======================================================== -->
+    <section id="view-step-player" class="hidden w-full flex flex-col gap-6">
+
+      <!-- Palco de Karaokê (Capa com Blur + Letras Sincronizadas) -->
+      <div class="relative w-full rounded-3xl overflow-hidden min-h-[460px] sm:min-h-[540px] border border-slate-800 flex flex-col justify-between shadow-2xl bg-slate-950">
+        
+        <!-- Fundo Blur da Capa -->
+        <div id="karaoke-bg" class="absolute inset-0 bg-cover bg-center transition-all duration-700 scale-105 filter blur-md"></div>
+        <div id="karaoke-overlay" class="absolute inset-0 bg-slate-950/85 transition-all duration-200"></div>
+
+        <!-- Barra Superior do Palco -->
+        <div class="relative z-10 p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-slate-950/50 backdrop-blur-md">
           <div>
-            <div class="flex items-center gap-2">
-              <h2 id="current-title" class="text-lg sm:text-2xl font-brand font-bold text-white drop-shadow">Música Carregada</h2>
+            <div class="flex items-center gap-2 flex-wrap">
+              <h2 id="current-title" class="text-lg sm:text-2xl font-brand font-bold text-white drop-shadow">Música</h2>
               <span id="current-singer-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                🎤 Cantor: Carlos
+                🎤 Cantor: Palco
               </span>
             </div>
             <p id="current-artist" class="text-xs sm:text-sm text-slate-300 mt-0.5">Artista</p>
           </div>
 
           <div class="flex items-center gap-2.5 flex-wrap">
+            <button id="btn-open-mixer" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800/90 text-amber-300 border border-amber-500/40 hover:bg-slate-700 transition flex items-center gap-1.5 shadow">
+              <span>🎚️ Mesa de Som & Mic</span>
+            </button>
             <button id="btn-adjust-lyrics" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800/90 text-sky-300 border border-sky-500/40 hover:bg-slate-700 transition flex items-center gap-1.5">
               <span>📝 Ajustar Letra</span>
             </button>
             <button id="btn-skip-song" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800/90 text-slate-300 border border-slate-700 hover:bg-slate-700 transition flex items-center gap-1.5">
-              <span>⏭️ Pular Música</span>
+              <span>⏭️ Pular</span>
             </button>
             <button id="btn-toggle-mic" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition flex items-center gap-2">
               <span id="mic-status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-              <span id="mic-btn-text">Microfone Ativo</span>
+              <span id="mic-btn-text">Mic Ativo</span>
             </button>
             <button id="btn-finish-song" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition shadow-lg shadow-amber-500/20 flex items-center gap-1.5">
-              <span>⭐ Concluir & Pontuar</span>
+              <span>⭐ Concluir</span>
             </button>
           </div>
         </div>
 
-        <!-- Área Central: Letras Sincronizadas -->
-        <div class="relative z-10 flex-1 flex flex-col items-center justify-center p-6 sm:p-10 text-center overflow-hidden">
-          <div id="lyrics-container" class="flex flex-col gap-3 max-w-3xl w-full">
-            <p id="lyric-prev" class="text-sm sm:text-lg text-slate-400/80 transition-all duration-300">Aguardando início...</p>
-            <p id="lyric-current" class="text-2xl sm:text-4xl font-brand font-extrabold text-white lyric-active leading-tight py-2">
+        <!-- Área Central das Letras Sincronizadas -->
+        <div class="relative z-10 flex-1 flex flex-col items-center justify-center p-6 sm:p-12 text-center overflow-hidden">
+          <div id="lyrics-container" class="flex flex-col gap-4 max-w-4xl w-full">
+            <p id="lyric-prev" class="text-sm sm:text-xl text-slate-400/80 transition-all duration-300 min-h-[1.75rem]">Aguardando início...</p>
+            <p id="lyric-current" class="text-3xl sm:text-5xl font-brand font-black text-white lyric-active leading-tight py-2 min-h-[3.5rem]">
               Pressione Play para começar!
             </p>
-            <p id="lyric-next" class="text-sm sm:text-lg text-slate-400/80 transition-all duration-300">...</p>
+            <p id="lyric-next" class="text-sm sm:text-xl text-slate-400/80 transition-all duration-300 min-h-[1.75rem]">...</p>
           </div>
         </div>
 
-        <!-- Barra Inferior do Palco: Player de Áudio & Seek -->
-        <div class="relative z-10 p-5 bg-slate-950/70 backdrop-blur-md border-t border-white/10 flex flex-col gap-3">
-          <!-- Seek Bar -->
+        <!-- Barra Inferior do Player & Seek -->
+        <div class="relative z-10 p-5 bg-slate-950/80 backdrop-blur-md border-t border-white/10 flex flex-col gap-3">
           <div class="flex items-center gap-3">
             <span id="time-current" class="text-xs font-mono text-slate-300">00:00</span>
             <input type="range" id="seek-bar" min="0" max="100" value="0" class="flex-1 accent-sky-400 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
             <span id="time-total" class="text-xs font-mono text-slate-400">00:00</span>
           </div>
 
-          <!-- Botões Principais -->
-          <div class="flex items-center justify-center gap-4">
+          <div class="flex items-center justify-between">
+            <button onclick="showStep('search')" class="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-800 transition">
+              <span>🔍 + Pedir Outra Música</span>
+            </button>
+
             <button id="btn-play-pause" class="w-12 h-12 rounded-full bg-sky-500 hover:bg-sky-400 text-white flex items-center justify-center text-xl shadow-lg shadow-sky-500/30 transition active:scale-95">
               ▶
             </button>
-          </div>
-        </div>
-      </div>
 
-      <!-- Mesa de Som (Mixer de Faixas + Retorno do Microfone + Contraste) -->
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-        
-        <!-- Faixa 1: Instrumental (Demucs two-stems) -->
-        <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
-              🎸 Instrumental
-            </span>
-            <span id="vol-text-inst" class="text-xs font-mono text-slate-300">100%</span>
+            <button onclick="toggleQueueDrawer(true)" class="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-800 transition">
+              <span>📋 Ver Fila</span>
+            </button>
           </div>
-          <input type="range" id="slider-inst" min="0" max="150" value="100" class="accent-sky-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
-          <p class="text-[11px] text-slate-500">Demucs v4 alta fidelidade (sem vocais).</p>
-        </div>
-
-        <!-- Faixa 2: Backing Vocals (Mid-Side Harmônico) -->
-        <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
-              🎶 Backing Vocals
-            </span>
-            <span id="vol-text-backing" class="text-xs font-mono text-slate-300">80%</span>
-          </div>
-          <input type="range" id="slider-backing" min="0" max="150" value="80" class="accent-indigo-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
-          <p class="text-[11px] text-slate-500">Coros, segundas vozes e ambiência.</p>
-        </div>
-
-        <!-- Faixa 3: Voz Principal da Música -->
-        <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1.5">
-              🎤 Voz Guia
-            </span>
-            <span id="vol-text-lead" class="text-xs font-mono text-slate-300">20%</span>
-          </div>
-          <input type="range" id="slider-lead" min="0" max="150" value="20" class="accent-pink-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
-          <p class="text-[11px] text-slate-500">Guia vocal original. Reduza a 0% para cantar solo.</p>
-        </div>
-
-        <!-- Faixa 4: Retorno ao Vivo do Microfone -->
-        <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3 border-emerald-500/20">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-              🎙️ Retorno do Mic
-            </span>
-            <span id="vol-text-mic" class="text-xs font-mono text-slate-300">80%</span>
-          </div>
-          <input type="range" id="slider-mic" min="0" max="150" value="80" class="accent-emerald-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
-          <p class="text-[11px] text-slate-500">Sua voz nos alto-falantes/fone. Ajuste contra microfonia.</p>
-        </div>
-
-        <!-- Faixa 5: Contraste do Palco -->
-        <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-              🎚️ Contraste Fundo
-            </span>
-            <span id="text-opacity" class="text-xs font-mono text-slate-300">80%</span>
-          </div>
-          <input type="range" id="slider-opacity" min="20" max="98" value="80" class="accent-amber-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
-          <p class="text-[11px] text-slate-500">Ajusta o escurecimento do fundo sobre a capa.</p>
         </div>
 
       </div>
 
-    </section>
-
-    <!-- Seção da Fila de Músicas da Festa (Até 20 músicas) -->
-    <section id="section-queue-container" class="w-full flex flex-col gap-4">
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-          <div class="flex items-center gap-2">
-            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-              📋 Fila de Karaokê da Festa
-            </h2>
-            <span id="queue-badge-main" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-500/20 text-sky-400 border border-sky-500/30">
-              0 / 20
-            </span>
-          </div>
-          <p class="text-xs text-slate-400">
-            Enquanto uma música toca, a próxima já é processada em background!
-          </p>
-        </div>
-
-        <!-- Lista da Fila -->
-        <div id="main-queue-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          <p class="col-span-full text-center text-slate-400 py-6 text-sm">
-            Nenhuma música na fila. Adicione abaixo ou convide amigos para pedir pelo celular!
-          </p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Seção de Busca do YouTube -->
-    <section id="section-search" class="w-full flex flex-col gap-4">
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 sm:p-8 shadow-xl shadow-black/40">
-        <h2 class="text-lg sm:text-xl font-bold text-slate-100 mb-2 flex items-center gap-2">
-          🔍 Adicionar Música à Fila
-        </h2>
-        <p class="text-sm text-slate-400 mb-5">
-          Pesquise pelo nome da música ou artista diretamente no YouTube.
-        </p>
-
-        <form id="form-search" class="flex gap-2">
-          <input
-            type="text"
-            id="input-search"
-            placeholder="Ex: Evidências - Chitãozinho e Xororó, Bohemian Rhapsody, Dua Lipa..."
-            class="flex-1 bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
-            required
-          />
-          <button
-            type="submit"
-            id="btn-search"
-            class="bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-semibold text-sm px-6 py-3 rounded-xl transition flex items-center gap-2 shadow-lg shadow-sky-500/25 active:scale-95"
-          >
-            <span>Buscar</span>
-          </button>
-        </form>
-
-        <!-- Resultados da Busca -->
-        <div id="search-results" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6"></div>
-      </div>
     </section>
 
   </main>
 
   <!-- ======================================================== -->
-  <!-- Widget Discreto e Elegante do QR Code no Canto da Tela   -->
+  <!-- MENU SUSPENSO DA FILA À DIREITA (Slide-Over Drawer)      -->
+  <!-- ======================================================== -->
+  <div id="drawer-queue-backdrop" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-xs transition-opacity duration-300"></div>
+
+  <aside id="drawer-queue" class="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-slate-900/95 backdrop-blur-xl border-l border-slate-800 z-50 shadow-2xl flex flex-col transition-transform duration-300 translate-x-full">
+    <!-- Cabeçalho do Drawer -->
+    <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+      <div class="flex items-center gap-2">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          📋 Fila da Festa
+        </h3>
+        <span id="drawer-queue-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-500/20 text-sky-400 border border-sky-500/30">
+          0/20
+        </span>
+      </div>
+      <button id="btn-close-queue-drawer" class="text-slate-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-slate-800" title="Fechar Menu">
+        ✕
+      </button>
+    </div>
+
+    <!-- Lista da Fila -->
+    <div id="drawer-queue-list" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+      <p class="text-center text-slate-500 text-xs py-10">A fila está vazia. Adicione músicas pelo sistema de busca ou celular!</p>
+    </div>
+
+    <!-- Rodapé do Drawer -->
+    <div class="p-4 border-t border-slate-800 bg-slate-950/50 flex gap-2">
+      <button onclick="toggleQueueDrawer(false); showStep('search')" class="flex-1 bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs py-3 rounded-xl transition text-center">
+        + Adicionar Mais Músicas
+      </button>
+    </div>
+  </aside>
+
+  <!-- ======================================================== -->
+  <!-- PAINEL SUSPENSO: MESA DE SOM & RETORNO DO MICROFONE      -->
+  <!-- ======================================================== -->
+  <div id="modal-mixer" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-4xl w-full shadow-2xl flex flex-col gap-5">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          🎚️ Mesa de Som & Retorno do Microfone
+        </h3>
+        <button id="btn-close-mixer" class="text-slate-400 hover:text-white font-bold text-lg">✕</button>
+      </div>
+
+      <!-- Grid dos 5 Controladores -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        
+        <!-- Faixa 1: Instrumental -->
+        <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-sky-400">🎸 Instrumental</span>
+            <span id="vol-text-inst" class="text-xs font-mono text-slate-300">100%</span>
+          </div>
+          <input type="range" id="slider-inst" min="0" max="150" value="100" class="accent-sky-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <p class="text-[11px] text-slate-500">Demucs v4 alta fidelidade.</p>
+        </div>
+
+        <!-- Faixa 2: Backing Vocals -->
+        <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-indigo-400">🎶 Backing</span>
+            <span id="vol-text-backing" class="text-xs font-mono text-slate-300">80%</span>
+          </div>
+          <input type="range" id="slider-backing" min="0" max="150" value="80" class="accent-indigo-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <p class="text-[11px] text-slate-500">Coros e segundas vozes.</p>
+        </div>
+
+        <!-- Faixa 3: Voz Guia Original -->
+        <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-pink-400">🎤 Voz Guia</span>
+            <span id="vol-text-lead" class="text-xs font-mono text-slate-300">20%</span>
+          </div>
+          <input type="range" id="slider-lead" min="0" max="150" value="20" class="accent-pink-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <p class="text-[11px] text-slate-500">Guia original. 0% para solo.</p>
+        </div>
+
+        <!-- Faixa 4: Retorno ao Vivo do Microfone -->
+        <div class="bg-slate-950 border border-emerald-500/30 rounded-2xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">🎙️ Retorno Mic</span>
+            <span id="vol-text-mic" class="text-xs font-mono text-slate-300">80%</span>
+          </div>
+          <input type="range" id="slider-mic" min="0" max="150" value="80" class="accent-emerald-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <p class="text-[11px] text-slate-500">Sua voz nos alto-falantes/fone.</p>
+        </div>
+
+        <!-- Faixa 5: Contraste do Palco -->
+        <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-amber-400">🎚️ Contraste</span>
+            <span id="text-opacity" class="text-xs font-mono text-slate-300">80%</span>
+          </div>
+          <input type="range" id="slider-opacity" min="20" max="98" value="80" class="accent-amber-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <p class="text-[11px] text-slate-500">Escurecimento do fundo.</p>
+        </div>
+
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button id="btn-save-mixer" class="bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs px-6 py-2.5 rounded-xl transition">
+          Pronto
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- WIDGET DISCRETO DO QR CODE NO CANTO DA TELA              -->
   <!-- ======================================================== -->
   <div id="qr-widget" class="fixed bottom-6 right-6 z-40 transition-all duration-300">
-    <!-- Card Expandido do QR Code -->
     <div id="qr-card" class="bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-4 shadow-2xl flex flex-col items-center gap-3 w-56">
       <div class="flex items-center justify-between w-full">
         <div class="flex items-center gap-1.5">
@@ -279,7 +406,6 @@
         </button>
       </div>
 
-      <!-- Canvas do QR Code com fundo branco nítido -->
       <div class="bg-white p-2 rounded-xl shadow-inner flex items-center justify-center">
         <div id="qrcode-container" class="w-36 h-36 flex items-center justify-center"></div>
       </div>
@@ -292,7 +418,6 @@
       </div>
     </div>
 
-    <!-- Botão Flutuante quando Minimizado -->
     <button id="qr-pill-btn" class="hidden bg-slate-900/90 hover:bg-slate-800 backdrop-blur-md border border-slate-700 text-sky-400 hover:text-white font-semibold text-xs px-3.5 py-2 rounded-full shadow-2xl flex items-center gap-2 transition active:scale-95">
       <span>📱</span>
       <span>QR Code Festa</span>
@@ -325,14 +450,12 @@
         </button>
       </div>
 
-      <!-- Botão Whisper Local -->
       <div class="border-t border-slate-800 pt-3">
         <button id="btn-whisper-generate" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs py-2.5 rounded-xl transition shadow flex items-center justify-center gap-2">
           <span>🤖 Gerar Letra com IA Local (Whisper)</span>
         </button>
       </div>
 
-      <!-- Lista de Opções Encontradas -->
       <div id="lyrics-options-list" class="max-h-64 overflow-y-auto flex flex-col gap-2.5 mt-2">
         <p class="text-center text-slate-500 text-xs py-4">Digite acima para buscar alternativas no banco de dados.</p>
       </div>
@@ -350,13 +473,11 @@
         <p class="text-xs text-slate-400 mt-1">Sua pontuação na escala festiva de karaokê:</p>
       </div>
 
-      <!-- Badge de Nota -->
       <div class="px-8 py-4 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-sky-500/20 border border-amber-500/50 flex flex-col items-center">
         <span id="final-score-number" class="text-5xl font-black text-amber-300 font-brand">95</span>
         <span class="text-xs font-bold tracking-widest text-slate-300 uppercase mt-1">Pontos (75 a 100)</span>
       </div>
 
-      <!-- Formulário para salvar no Hall da Fama -->
       <form id="form-hall" class="w-full flex flex-col gap-3">
         <input
           type="text"

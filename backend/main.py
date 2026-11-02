@@ -158,16 +158,73 @@ def api_search(q: str = Query(..., min_length=1)):
 
     return {"results": results}
 
+@app.get("/api/preview/{video_id}")
+async def api_preview(video_id: str):
+    """
+    Retorna um preview de áudio (5 segundos) do vídeo do YouTube para confirmação rápida da versão.
+    Salva em cache em temp/previews/{video_id}.mp3.
+    """
+    preview_dir = os.path.join(TEMP_DIR, "previews")
+    os.makedirs(preview_dir, exist_ok=True)
+    preview_file = os.path.join(preview_dir, f"{video_id}.mp3")
+
+    if os.path.exists(preview_file):
+        return FileResponse(preview_file, media_type="audio/mpeg")
+
+    loop = asyncio.get_running_loop()
+
+    def extract_preview():
+        ensure_ffmpeg()
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": os.path.join(preview_dir, f"{video_id}.%(ext)s"),
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "128",
+            }],
+            "download_ranges": yt_dlp.utils.download_range_func(None, [(20, 25)]),
+            "force_keyframes_at_cuts": True,
+            "quiet": True,
+            "no_warnings": True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+
+    try:
+        await loop.run_in_executor(None, extract_preview)
+        if os.path.exists(preview_file):
+            return FileResponse(preview_file, media_type="audio/mpeg")
+    except Exception as e:
+        logger.warning(f"Download_ranges falhou para preview {video_id}: {e}")
+
+    # Fallback: se não conseguiu fatiar 5s, redireciona para stream direto
+    def get_stream_url():
+        ydl_opts = {"format": "bestaudio/best", "quiet": True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            return info.get("url")
+
+    try:
+        stream_url = await loop.run_in_executor(None, get_stream_url)
+        if stream_url:
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=stream_url)
+    except Exception as e:
+        logger.error(f"Erro ao extrair stream URL de preview para {video_id}: {e}")
+
+    raise HTTPException(status_code=404, detail="Não foi possível gerar o preview desta música.")
+
 # ----------------------------------------------------------------------
 # Endpoints do Sistema de Fila
 # ----------------------------------------------------------------------
 @app.get("/api/queue")
-def api_get_queue():
+async def api_get_queue():
     """Retorna os itens ativos na fila."""
     return {"queue": queue_manager.get_queue_payload()}
 
 @app.post("/api/queue")
-def api_add_queue(req: AddToQueueRequest):
+async def api_add_queue(req: AddToQueueRequest):
     """Adiciona uma música à fila (limite de 20)."""
     try:
         item = queue_manager.add_to_queue(
@@ -183,7 +240,7 @@ def api_add_queue(req: AddToQueueRequest):
         raise HTTPException(status_code=400, detail=str(ve))
 
 @app.delete("/api/queue/{item_id}")
-def api_remove_queue(item_id: str):
+async def api_remove_queue(item_id: str):
     """Remove uma música da fila."""
     success = queue_manager.remove_item(item_id)
     if not success:
@@ -191,7 +248,7 @@ def api_remove_queue(item_id: str):
     return {"success": True}
 
 @app.post("/api/queue/{item_id}/play")
-def api_play_queue(item_id: str):
+async def api_play_queue(item_id: str):
     """Inicia a reprodução de um item que está pronto."""
     item = queue_manager.mark_playing(item_id)
     if not item:
@@ -199,7 +256,7 @@ def api_play_queue(item_id: str):
     return {"success": True, "item": item.model_dump()}
 
 @app.post("/api/queue/skip")
-def api_skip_queue():
+async def api_skip_queue():
     """Pula a música atual e avança para a próxima pronta."""
     next_item = queue_manager.skip_current()
     return {"success": True, "next_item": next_item.model_dump() if next_item else None}
@@ -237,7 +294,7 @@ async def api_lyrics_options(q: str = Query(..., min_length=1)):
     return {"options": options}
 
 @app.post("/api/lyrics/select")
-def api_lyrics_select(req: SelectLyricsRequest):
+async def api_lyrics_select(req: SelectLyricsRequest):
     """Aplica uma nova letra selecionada manualmente à música."""
     success = queue_manager.update_lyrics(req.queue_id, req.lyrics_data)
     if not success:
@@ -245,7 +302,7 @@ def api_lyrics_select(req: SelectLyricsRequest):
     return {"success": True}
 
 @app.post("/api/lyrics/whisper/{queue_id}")
-def api_lyrics_whisper(queue_id: str):
+async def api_lyrics_whisper(queue_id: str):
     """Força a transcrição local da voz isolada via modelo Whisper."""
     item = queue_manager.get_item(queue_id)
     if not item:
