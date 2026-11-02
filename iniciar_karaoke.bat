@@ -183,21 +183,27 @@ echo [GPU] Isso e feito apenas na primeira vez para maxima velocidade.
 echo ========================================================
 echo.
 
-:: Tentativa 1: CUDA 12.4 (ampla compatibilidade GTX e RTX series 10, 20, 30, 40 e 50)
-echo [GPU] Instalando PyTorch com NVIDIA CUDA 12.4...
-".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+:: Tentativa 1: CUDA 12.8 (Oficial para RTX serie 50 Blackwell, ex: RTX 5070 / 5080 e placas modernas)
+echo [GPU] [1/4] Instalando PyTorch com NVIDIA CUDA 12.8 (RTX Serie 50 / Blackwell)...
+".venv\Scripts\python.exe" -m pip install --upgrade --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --extra-index-url https://pypi.org/simple
 ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
 if not errorlevel 1 goto gpu_validated
 
-:: Tentativa 2: CUDA 12.1 (compatibilidade com drivers estaveis)
-echo [GPU] Testando versao alternativa CUDA 12.1...
-".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+:: Tentativa 2: CUDA 12.6 (Compatibilidade intermediaria)
+echo [GPU] [2/4] Testando versao alternativa CUDA 12.6...
+".venv\Scripts\python.exe" -m pip install --upgrade --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu126 --extra-index-url https://pypi.org/simple
 ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
 if not errorlevel 1 goto gpu_validated
 
-:: Tentativa 3: CUDA 12.6
-echo [GPU] Testando versao alternativa CUDA 12.6...
-".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu126
+:: Tentativa 3: CUDA 12.4 (Compatibilidade estavel RTX serie 40 / 30 / 20 e GTX)
+echo [GPU] [3/4] Testando versao alternativa CUDA 12.4...
+".venv\Scripts\python.exe" -m pip install --upgrade --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu124 --extra-index-url https://pypi.org/simple
+".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
+if not errorlevel 1 goto gpu_validated
+
+:: Tentativa 4: CUDA 12.1 (Drivers corporativos e legados)
+echo [GPU] [4/4] Testando versao alternativa CUDA 12.1...
+".venv\Scripts\python.exe" -m pip install --upgrade --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
 ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
 if not errorlevel 1 goto gpu_validated
 
