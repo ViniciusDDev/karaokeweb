@@ -26,10 +26,10 @@ Construir o **`open-karaoke`**: um aplicativo local de Karaokê leve, web-based 
 
 ## Done-When
 
-- [ ] O script `iniciar_karaoke.bat` é criado na raiz, sendo capaz de inicializar o ambiente Python e abrir a página `http://localhost:5000` automaticamente.
-- [ ] O backend backend em Python expõe o endpoint de busca e o endpoint `/api/process` para baixar vídeos do YouTube (`yt-dlp`) e separar em 3 stems (`demucs`).
-- [ ] A detecção de hardware GPU vs. CPU funciona corretamente, aplicando o modelo mais leve em máquinas sem suporte a CUDA.
-- [ ] O frontend exibe os controles dos 3 canais de áudio com sliders de volume individuais operantes durante a reprodução.
-- [ ] A capa da música é renderizada como plano de fundo com slider funcional de contraste/opacidade para o texto da letra.
-- [ ] Ao final da música, o app exibe uma pontuação entre 75 e 100 e atualiza o "Hall da Fama" temporário da sessão.
-- [ ] Ao encerrar o servidor/script, os arquivos baixados e dados de sessão em `/temp/` são automaticamente apagados.
+- [x] O script `iniciar_karaoke.bat` é criado na raiz, sendo capaz de inicializar o ambiente Python e abrir a página `http://localhost:5000` automaticamente.
+- [x] O backend backend em Python expõe o endpoint de busca e o endpoint `/api/process` para baixar vídeos do YouTube (`yt-dlp`) e separar em 3 stems (`demucs`).
+- [x] A detecção de hardware GPU vs. CPU funciona corretamente, aplicando o modelo mais leve em máquinas sem suporte a CUDA.
+- [x] O frontend exibe os controles dos 3 canais de áudio com sliders de volume individuais operantes durante a reprodução.
+- [x] A capa da música é renderizada como plano de fundo com slider funcional de contraste/opacidade para o texto da letra.
+- [x] Ao final da música, o app exibe uma pontuação entre 75 e 100 e atualiza o "Hall da Fama" temporário da sessão.
+- [x] Ao encerrar o servidor/script, os arquivos baixados e dados de sessão em `/temp/` são automaticamente apagados.

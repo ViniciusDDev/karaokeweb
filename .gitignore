@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+.venv/
+venv/
+ENV/
+
+# OpenKaraoke temp session files
+temp/
+*.wav
+*.mp3
+
+# IDEs & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

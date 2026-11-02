@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenKaraoke — 1-Click Karaokê Web</title>
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Canvas Confetti para celebração da pontuação -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- Google Fonts: Inter e Poppins -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@700;800;900&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .font-brand { font-family: 'Poppins', sans-serif; }
+    .lyric-active {
+      color: #38bdf8;
+      text-shadow: 0 0 20px rgba(56, 189, 248, 0.7);
+      transform: scale(1.04);
+      transition: all 0.25s ease-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-sky-500 selection:text-white">
+
+  <!-- Header da Aplicação -->
+  <header class="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20 text-xl font-bold">
+        🎤
+      </div>
+      <div>
+        <h1 class="text-xl font-brand font-extrabold tracking-tight bg-gradient-to-r from-sky-400 via-indigo-300 to-pink-400 bg-clip-text text-transparent">
+          OpenKaraoke
+        </h1>
+        <p class="text-xs text-slate-400">1-Click Local Karaokê</p>
+      </div>
+    </div>
+
+    <!-- Indicador de Hardware & Hall da Fama -->
+    <div class="flex items-center gap-4">
+      <div id="hw-badge" class="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-800/80 border border-slate-700 text-slate-300">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="hw-desc">Detectando hardware...</span>
+      </div>
+      <button id="btn-open-hall" class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition">
+        🏆 Hall da Fama
+      </button>
+    </div>
+  </header>
+
+  <!-- Conteúdo Principal -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-6">
+
+    <!-- Seção de Busca do YouTube -->
+    <section id="section-search" class="w-full flex flex-col gap-4">
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 sm:p-8 shadow-xl shadow-black/40">
+        <h2 class="text-lg sm:text-xl font-bold text-slate-100 mb-2 flex items-center gap-2">
+          🔍 Escolha a próxima música
+        </h2>
+        <p class="text-sm text-slate-400 mb-5">
+          Pesquise pelo nome da música ou artista diretamente no YouTube para iniciar a separação por IA.
+        </p>
+
+        <form id="form-search" class="flex gap-2">
+          <input
+            type="text"
+            id="input-search"
+            placeholder="Ex: Evidências - Chitãozinho e Xororó, Bohemian Rhapsody, Dua Lipa..."
+            class="flex-1 bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
+            required
+          />
+          <button
+            type="submit"
+            id="btn-search"
+            class="bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-semibold text-sm px-6 py-3 rounded-xl transition flex items-center gap-2 shadow-lg shadow-sky-500/25 active:scale-95"
+          >
+            <span>Buscar</span>
+          </button>
+        </form>
+
+        <!-- Resultados da Busca -->
+        <div id="search-results" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6"></div>
+      </div>
+    </section>
+
+    <!-- Modal / Card de Progresso da IA -->
+    <div id="modal-progress" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center gap-4">
+        <div class="w-16 h-16 rounded-2xl bg-sky-500/10 text-sky-400 flex items-center justify-center text-3xl animate-bounce">
+          ⚡
+        </div>
+        <h3 class="text-xl font-bold text-slate-100">Processando Música</h3>
+        <p id="progress-message" class="text-sm text-slate-400 min-h-[40px] flex items-center justify-center">
+          Iniciando download...
+        </p>
+
+        <!-- Barra de Progresso -->
+        <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden border border-slate-700">
+          <div id="progress-bar-fill" class="bg-gradient-to-r from-sky-400 to-indigo-500 h-full w-0 transition-all duration-300"></div>
+        </div>
+        <span id="progress-percent" class="text-xs font-mono text-sky-400 font-semibold">0%</span>
+      </div>
+    </div>
+
+    <!-- Seção do Palco / Karaokê Player (Aparece após o processamento) -->
+    <section id="section-karaoke" class="hidden flex flex-col gap-6">
+
+      <!-- Palco de Karaokê (Capa de Fundo + Letras Sincronizadas) -->
+      <div class="relative w-full rounded-3xl overflow-hidden min-h-[420px] sm:min-h-[480px] border border-slate-800 flex flex-col justify-between shadow-2xl bg-slate-950">
+        
+        <!-- Imagem de Fundo (Capa do Álbum) com Blur -->
+        <div id="karaoke-bg" class="absolute inset-0 bg-cover bg-center transition-all duration-700 scale-105 filter blur-sm"></div>
+
+        <!-- Overlay de Contraste Ajustável -->
+        <div id="karaoke-overlay" class="absolute inset-0 bg-slate-950/80 transition-all duration-200"></div>
+
+        <!-- Barra Superior do Palco: Título e Controle de Microfone -->
+        <div class="relative z-10 p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-slate-950/40 backdrop-blur-sm">
+          <div>
+            <h2 id="current-title" class="text-lg sm:text-2xl font-brand font-bold text-white drop-shadow">Música Carregada</h2>
+            <p id="current-artist" class="text-xs sm:text-sm text-slate-300">Artista</p>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <button id="btn-toggle-mic" class="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition flex items-center gap-2">
+              <span id="mic-status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+              <span id="mic-btn-text">Microfone Ativo</span>
+            </button>
+            <button id="btn-finish-song" class="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition shadow-lg shadow-amber-500/20 flex items-center gap-1.5">
+              <span>⭐ Concluir & Pontuar</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Área Central: Letras Sincronizadas -->
+        <div class="relative z-10 flex-1 flex flex-col items-center justify-center p-6 sm:p-10 text-center overflow-hidden">
+          <div id="lyrics-container" class="flex flex-col gap-3 max-w-3xl w-full">
+            <p id="lyric-prev" class="text-sm sm:text-lg text-slate-400/80 transition-all duration-300">Aguardando início...</p>
+            <p id="lyric-current" class="text-2xl sm:text-4xl font-brand font-extrabold text-white lyric-active leading-tight py-2">
+              Pressione Play para começar!
+            </p>
+            <p id="lyric-next" class="text-sm sm:text-lg text-slate-400/80 transition-all duration-300">...</p>
+          </div>
+        </div>
+
+        <!-- Barra Inferior do Palco: Player de Áudio & Seek -->
+        <div class="relative z-10 p-5 bg-slate-950/70 backdrop-blur-md border-t border-white/10 flex flex-col gap-3">
+          <!-- Seek Bar -->
+          <div class="flex items-center gap-3">
+            <span id="time-current" class="text-xs font-mono text-slate-300">00:00</span>
+            <input type="range" id="seek-bar" min="0" max="100" value="0" class="flex-1 accent-sky-400 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
+            <span id="time-total" class="text-xs font-mono text-slate-400">00:00</span>
+          </div>
+
+          <!-- Botões Principais -->
+          <div class="flex items-center justify-center gap-4">
+            <button id="btn-play-pause" class="w-12 h-12 rounded-full bg-sky-500 hover:bg-sky-400 text-white flex items-center justify-center text-xl shadow-lg shadow-sky-500/30 transition active:scale-95">
+              ▶
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mesa de Som (Mixer de 3 Faixas + Contraste de Fundo) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl grid grid-cols-1 md:grid-cols-4 gap-6">
+        
+        <!-- Faixa 1: Instrumental -->
+        <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+              🎸 Instrumental
+            </span>
+            <span id="vol-text-inst" class="text-xs font-mono text-slate-300">100%</span>
+          </div>
+          <input type="range" id="slider-inst" min="0" max="150" value="100" class="accent-sky-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <p class="text-[11px] text-slate-500">Bateria, baixo e harmonia combinados.</p>
+        </div>
+
+        <!-- Faixa 2: Backing Vocals -->
+        <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+              🎶 Backing Vocals
+            </span>
+            <span id="vol-text-backing" class="text-xs font-mono text-slate-300">80%</span>
+          </div>
+          <input type="range" id="slider-backing" min="0" max="150" value="80" class="accent-indigo-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <p class="text-[11px] text-slate-500">Coros, segundas vozes e ambiência.</p>
+        </div>
+
+        <!-- Faixa 3: Voz Principal -->
+        <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1.5">
+              🎤 Voz Principal
+            </span>
+            <span id="vol-text-lead" class="text-xs font-mono text-slate-300">20%</span>
+          </div>
+          <input type="range" id="slider-lead" min="0" max="150" value="20" class="accent-pink-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <p class="text-[11px] text-slate-500">Guia vocal. Reduza a 0% para cantar solo.</p>
+        </div>
+
+        <!-- Faixa 4: Contraste do Palco -->
+        <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+              🎚️ Contraste da Letra
+            </span>
+            <span id="text-opacity" class="text-xs font-mono text-slate-300">80%</span>
+          </div>
+          <input type="range" id="slider-opacity" min="20" max="98" value="80" class="accent-amber-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
+          <p class="text-[11px] text-slate-500">Ajusta o escurecimento do fundo sobre a capa.</p>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Modal de Pontuação & Hall da Fama -->
+  <div id="modal-score" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center gap-5 relative">
+      <div class="w-20 h-20 rounded-3xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-4xl border border-amber-500/40">
+        🏆
+      </div>
+      <div>
+        <h3 id="score-praise" class="text-2xl font-brand font-extrabold text-white">Show Inesquecível!</h3>
+        <p class="text-xs text-slate-400 mt-1">Sua pontuação na escala festiva de karaokê:</p>
+      </div>
+
+      <!-- Badge de Nota -->
+      <div class="px-8 py-4 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-sky-500/20 border border-amber-500/50 flex flex-col items-center">
+        <span id="final-score-number" class="text-5xl font-black text-amber-300 font-brand">95</span>
+        <span class="text-xs font-bold tracking-widest text-slate-300 uppercase mt-1">Pontos (75 a 100)</span>
+      </div>
+
+      <!-- Formulário para salvar no Hall da Fama -->
+      <form id="form-hall" class="w-full flex flex-col gap-3">
+        <input
+          type="text"
+          id="input-singer-name"
+          placeholder="Digite seu nome ou apelido..."
+          maxlength="30"
+          class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
+          required
+        />
+        <button
+          type="submit"
+          class="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold py-3 rounded-xl transition shadow-lg shadow-amber-500/20 text-sm"
+        >
+          Salvar no Hall da Fama
+        </button>
+      </form>
+
+      <button id="btn-close-score" class="text-xs text-slate-400 hover:text-white transition">
+        Fechar sem salvar
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal do Hall da Fama -->
+  <div id="modal-hall-list" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+          🏆 Hall da Fama da Sessão
+        </h3>
+        <button id="btn-close-hall-modal" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
+      </div>
+
+      <div id="hall-list-container" class="max-h-80 overflow-y-auto flex flex-col gap-2">
+        <p class="text-xs text-slate-400 text-center py-6">Nenhum cantor pontuou ainda nesta sessão.</p>
+      </div>
+
+      <p class="text-[11px] text-slate-500 text-center">
+        * As pontuações são temporárias e são limpas automaticamente ao fechar o karaokê.
+      </p>
+    </div>
+  </div>
+
+  <!-- Script da Aplicação -->
+  <script src="/app.js"></script>
+</body>
+</html>
