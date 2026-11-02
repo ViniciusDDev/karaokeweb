@@ -270,8 +270,9 @@ def transcribe_with_whisper(vocal_audio_path: str) -> Optional[Dict[str, Any]]:
     try:
         import whisper
         import torch
+        from backend.audio_processor import is_cuda_functional
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = "cuda" if is_cuda_functional() else "cpu"
         if _whisper_model is None:
             logger.info(f"Carregando modelo Whisper 'tiny' ({device})...")
             _whisper_model = whisper.load_model("tiny", device=device)

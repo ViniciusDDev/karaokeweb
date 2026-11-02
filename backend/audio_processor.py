@@ -203,6 +203,14 @@ def process_audio_stems(input_audio_path, output_dir, progress_callback=None):
     no_vocals_path = os.path.join(stems_dir, "no_vocals.wav")
 
     if not os.path.exists(vocals_path):
+        for root, dirs, files in os.walk(temp_demucs_out):
+            if "vocals.wav" in files:
+                vocals_path = os.path.join(root, "vocals.wav")
+                no_vocals_path = os.path.join(root, "no_vocals.wav")
+                stems_dir = root
+                break
+
+    if not os.path.exists(vocals_path):
         raise FileNotFoundError("Demucs não gerou os arquivos de stems esperados.")
 
     # 1. Cria Instrumental

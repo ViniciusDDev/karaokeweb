@@ -42,7 +42,17 @@ def get_local_ip() -> str:
         s.close()
         return ip
     except Exception:
-        return "127.0.0.1"
+        pass
+
+    try:
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+
+    return "127.0.0.1"
 
 def clean_temp_directory():
     """Remove todos os arquivos e pastas no diretório temporário."""

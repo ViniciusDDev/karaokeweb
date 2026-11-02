@@ -1,5 +1,5 @@
 @echo off
-chcp 65001 > nul
+chcp 65001 > nul 2>&1
 title OpenKaraoke - Plug and Play
 
 :: 0. Fixa o diretorio de trabalho na pasta deste arquivo .bat
@@ -14,42 +14,42 @@ echo.
 set "PYTHON_CMD="
 
 :: Teste 1: py -3.12
-py -3.12 --version >nul 2>&1
+py -3.12 -c "import sys" >nul 2>&1
 if not errorlevel 1 (
     set "PYTHON_CMD=py -3.12"
     goto python_found
 )
 
 :: Teste 2: py -3.11
-py -3.11 --version >nul 2>&1
+py -3.11 -c "import sys" >nul 2>&1
 if not errorlevel 1 (
     set "PYTHON_CMD=py -3.11"
     goto python_found
 )
 
 :: Teste 3: py -3.10
-py -3.10 --version >nul 2>&1
+py -3.10 -c "import sys" >nul 2>&1
 if not errorlevel 1 (
     set "PYTHON_CMD=py -3.10"
     goto python_found
 )
 
 :: Teste 4: py -3 generico
-py -3 --version >nul 2>&1
+py -3 -c "import sys" >nul 2>&1
 if not errorlevel 1 (
     set "PYTHON_CMD=py -3"
     goto python_found
 )
 
 :: Teste 5: python direto no PATH
-python --version >nul 2>&1
+python -c "import sys" >nul 2>&1
 if not errorlevel 1 (
     set "PYTHON_CMD=python"
     goto python_found
 )
 
 :: Teste 6: py launcher generico
-py --version >nul 2>&1
+py -c "import sys" >nul 2>&1
 if not errorlevel 1 (
     set "PYTHON_CMD=py"
     goto python_found
@@ -57,7 +57,7 @@ if not errorlevel 1 (
 
 :: Falha na deteccao do Python
 echo ========================================================
-echo [ERRO] Nenhuma instalacao do Python foi encontrada!
+echo [ERRO] Nenhuma instalacao valida do Python foi encontrada!
 echo.
 echo Por favor, instale o Python 3.11 ou 3.12 (64 bits) em:
 echo https://www.python.org/downloads/
@@ -75,10 +75,13 @@ echo Interpretador detectado: %PYTHON_CMD%
 echo.
 
 :: 2. Criacao e Validacao do Ambiente Virtual (.venv)
-if exist ".venv\installed.flag" goto activate_venv
+if not exist ".venv\installed.flag" goto clean_or_create_venv
+if not exist ".venv\Scripts\python.exe" goto clean_or_create_venv
+goto activate_venv
 
+:clean_or_create_venv
 if not exist ".venv" goto create_venv
-echo Limpando ambiente virtual incompleto para evitar conflitos...
+echo Limpando ambiente virtual incompleto ou corrompido para evitar conflitos...
 rmdir /s /q ".venv" >nul 2>&1
 
 :create_venv
@@ -139,31 +142,43 @@ if not exist ".venv\Scripts\activate.bat" goto error_no_activate
 call ".venv\Scripts\activate.bat"
 if errorlevel 1 goto error_activate
 
-:: Verificacao e Ativacao Automatica de GPU NVIDIA (CUDA)
+:: Verificacao e Ativacao Automatica de GPU NVIDIA CUDA
 nvidia-smi >nul 2>&1
-if not errorlevel 1 (
-    ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
-    if errorlevel 1 (
-        echo.
-        echo ========================================================
-        echo [GPU] GPU NVIDIA detectada (ex: RTX serie 50 / 40 / 30).
-        echo [GPU] Instalando PyTorch com suporte moderno CUDA (12.8 / 12.6)...
-        echo ========================================================
-        ".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-        ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
-        if errorlevel 1 (
-            echo [GPU] Testando versao alternativa CUDA 12.6...
-            ".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu126
-        )
-        ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
-        if not errorlevel 1 (
-            echo [GPU] Sucesso! Aceleracao por GPU NVIDIA CUDA ativada e validada!
-        ) else (
-            echo [AVISO] Falha ao validar kernel da GPU. O sistema podera usar CPU.
-        )
-    )
-)
+if errorlevel 1 goto prepare_temp
 
+:: Testa se PyTorch ja executa tensores na GPU com sucesso
+".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
+if not errorlevel 1 goto gpu_validated
+
+echo.
+echo ========================================================
+echo [GPU] GPU NVIDIA detectada no sistema.
+echo [GPU] Configurando PyTorch com aceleracao CUDA moderna...
+echo ========================================================
+
+:: Tentativa 1: CUDA 12.8 (ideal para serie RTX 50 Blackwell e placas recentes)
+echo [GPU] Instalando PyTorch compativel com CUDA 12.8...
+".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
+if not errorlevel 1 goto gpu_validated
+
+:: Tentativa 2: CUDA 12.6
+echo [GPU] Testando versao alternativa CUDA 12.6...
+".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu126
+".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
+if not errorlevel 1 goto gpu_validated
+
+:: Tentativa 3: CUDA 12.1
+echo [GPU] Testando versao alternativa CUDA 12.1...
+".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
+if not errorlevel 1 goto gpu_validated
+
+echo [AVISO] Nao foi possivel ativar kernel CUDA na GPU. O sistema utilizara CPU.
+goto prepare_temp
+
+:gpu_validated
+echo [GPU] Sucesso! Aceleracao por GPU NVIDIA CUDA ativada e validada!
 goto prepare_temp
 
 :error_no_activate
@@ -219,3 +234,4 @@ echo Arquivos temporarios limpos com sucesso.
 echo ========================================================
 echo.
 pause
+exit /b %SERVER_EXIT_CODE%

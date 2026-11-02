@@ -328,7 +328,7 @@ function renderDrawerQueue(queue) {
     } else if (item.status === "error") {
       statusClass = "border-rose-500/40 bg-rose-950/20";
       actionBtn = `
-        <button onclick="retryQueueSong('${item.id}')" class="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-2.5 py-1.5 rounded-lg transition active:scale-95 shadow-sm flex items-center gap-1" title="${escapeHtml(item.error_message || 'Erro no processamento')}">
+        <button onclick="retryQueueSong('${item.id}')" class="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-2.5 py-1.5 rounded-lg transition active:scale-95 shadow-sm flex items-center gap-1" title="${escapeHtml(item.error_message || item.error || item.message || 'Erro no processamento')}">
           🔄 Tentar
         </button>
       `;
@@ -363,6 +363,10 @@ function renderDrawerQueue(queue) {
 // 6. EXECUÇÃO DE MÚSICA DA FILA & REMOÇÃO
 // ========================================================
 window.playQueueSong = async function(itemId) {
+  const ctx = getAudioContext();
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
   try {
     const res = await fetch(`/api/queue/${itemId}/play`, { method: "POST" });
     const text = await res.text();
@@ -752,6 +756,8 @@ window.seekTo = function(targetSeconds) {
   updateLyrics(clamped);
 };
 
+let isUserSeeking = false;
+
 function updatePlaybackProgress() {
   if (!isPlaying) return;
 
@@ -762,8 +768,10 @@ function updatePlaybackProgress() {
     return;
   }
 
-  seekBar.value = Math.floor(current);
-  timeCurrent.textContent = formatTime(current);
+  if (!isUserSeeking) {
+    seekBar.value = Math.floor(current);
+    timeCurrent.textContent = formatTime(current);
+  }
 
   updateLyrics(current);
   requestAnimationFrame(updatePlaybackProgress);
@@ -1233,7 +1241,16 @@ function setupEventListeners() {
     else startPlayback();
   });
 
+  seekBar.addEventListener("mousedown", () => { isUserSeeking = true; });
+  seekBar.addEventListener("touchstart", () => { isUserSeeking = true; }, { passive: true });
+
   seekBar.addEventListener("input", (e) => {
+    const targetTime = parseFloat(e.target.value);
+    timeCurrent.textContent = formatTime(targetTime);
+  });
+
+  seekBar.addEventListener("change", (e) => {
+    isUserSeeking = false;
     const targetTime = parseFloat(e.target.value);
     seekTo(targetTime);
   });

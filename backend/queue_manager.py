@@ -37,6 +37,7 @@ class QueueItem(BaseModel):
     created_at: float = 0.0
     retries: int = 0
     error: Optional[str] = None
+    error_message: Optional[str] = None
 
 class QueueManager:
     def __init__(self):
@@ -176,6 +177,7 @@ class QueueManager:
         item.percent = 0
         item.retries = 0
         item.error = None
+        item.error_message = None
         item.message = "Aguardando novo processamento..."
         self._new_item_event.set()
         self.trigger_broadcast()
@@ -322,6 +324,7 @@ class QueueManager:
 
                 item.percent = 10
                 item.message = "Baixando áudio..."
+                self.trigger_broadcast()
                 with yt_dlp.YoutubeDL(ydl_opts_audio) as ydl:
                     ydl.download([video_url])
 
@@ -353,20 +356,23 @@ class QueueManager:
 
                 item.percent = 25
                 item.message = "Separando instrumental e vocais com IA (Demucs v4)..."
+                self.trigger_broadcast()
 
                 def progress_cb(pct, msg):
                     item.percent = pct
                     item.message = msg
+                    self.trigger_broadcast()
 
                 # Separação otimizada com --two-stems vocals
                 stems = process_audio_stems(input_audio_path, job_dir, progress_callback=progress_cb)
 
                 item.percent = 85
                 item.message = "Buscando e sincronizando letra da música..."
+                self.trigger_broadcast()
 
                 # Cascata de 4 camadas para a letra
                 lead_vocal_path = stems["lead_vocal"]
-                # Chamada síncrona segura para a cascata de letras
+                # Chamada assíncrona segura para a cascata de letras em thread separada
                 async def run_lyrics():
                     return await fetch_lyrics_cascade(
                         title=item.title,
@@ -376,9 +382,7 @@ class QueueManager:
                         vocal_audio_path=lead_vocal_path
                     )
 
-                sub_loop = asyncio.new_event_loop()
-                lyrics_data = sub_loop.run_until_complete(run_lyrics())
-                sub_loop.close()
+                lyrics_data = asyncio.run(run_lyrics())
 
                 item.stems = {
                     "instrumental": f"/api/audio/{item.id}/instrumental.wav",
@@ -417,6 +421,7 @@ class QueueManager:
                 else:
                     item.status = "error"
                     item.error = str(e)
+                    item.error_message = str(e)
                     item.message = f"Erro no processamento: {str(e)[:100]}"
 
         # Executa o pipeline de áudio no threadpool executor para não travar o loop do FastAPI
