@@ -159,6 +159,10 @@ const btnWhisperGenerate = document.getElementById("btn-whisper-generate");
 window.showStep = function(stepName) {
   stopAudioPreview();
 
+  if (stepName !== "player" && document.fullscreenElement) {
+    document.exitFullscreen?.().catch(() => {});
+  }
+
   viewStepSearch.classList.add("hidden");
   viewStepResults.classList.add("hidden");
   viewStepProcessing.classList.add("hidden");
@@ -1152,7 +1156,20 @@ function showScoreModal() {
   else scorePraise.textContent = "Boa Apresentação! Valeu a Animação! 👏";
 
   if (window.confetti) {
-    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+    const stageCard = document.getElementById("karaoke-stage-card");
+    if (document.fullscreenElement === stageCard) {
+      let stageCanvas = document.getElementById("stage-confetti-canvas");
+      if (!stageCanvas) {
+        stageCanvas = document.createElement("canvas");
+        stageCanvas.id = "stage-confetti-canvas";
+        stageCanvas.className = "absolute inset-0 pointer-events-none z-50 w-full h-full";
+        stageCard.appendChild(stageCanvas);
+      }
+      const myConfetti = confetti.create(stageCanvas, { resize: true });
+      myConfetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+    } else {
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+    }
   }
 
   inputSingerName.value = currentSongData?.requested_by || "";
@@ -1182,9 +1199,35 @@ btnCloseScore.addEventListener("click", () => {
 });
 
 // ========================================================
-// 16. EVENT LISTENERS GERAIS
+// 16. EVENT LISTENERS GERAIS & MODO TELA CHEIA
 // ========================================================
+function syncFullscreenModals() {
+  const stageCard = document.getElementById("karaoke-stage-card");
+  const modalIds = [
+    "modal-mixer",
+    "modal-adjust-lyrics",
+    "modal-score",
+    "drawer-queue-backdrop",
+    "drawer-queue"
+  ];
+
+  const isFullscreen = document.fullscreenElement === stageCard;
+  const targetParent = isFullscreen ? stageCard : document.body;
+
+  modalIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.parentElement !== targetParent) {
+      targetParent.appendChild(el);
+    }
+  });
+}
+
 function setupEventListeners() {
+  const btnStageQueue = document.getElementById("btn-stage-queue");
+  if (btnStageQueue) {
+    btnStageQueue.addEventListener("click", () => toggleQueueDrawer(true));
+  }
+
   btnPlayPause.addEventListener("click", () => {
     if (isPlaying) pausePlayback();
     else startPlayback();
@@ -1199,7 +1242,9 @@ function setupEventListeners() {
     btnToggleFullscreen.addEventListener("click", () => {
       const stageCard = document.getElementById("karaoke-stage-card");
       if (!document.fullscreenElement) {
-        (stageCard || document.documentElement).requestFullscreen?.().catch(err => {
+        (stageCard || document.documentElement).requestFullscreen?.().then(() => {
+          syncFullscreenModals();
+        }).catch(err => {
           console.warn("Tela cheia indisponível:", err);
         });
       } else {
@@ -1210,6 +1255,7 @@ function setupEventListeners() {
     });
 
     document.addEventListener("fullscreenchange", () => {
+      syncFullscreenModals();
       if (document.fullscreenElement) {
         btnToggleFullscreen.innerHTML = "<span>✕ Sair Tela Cheia</span>";
       } else {

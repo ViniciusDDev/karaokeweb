@@ -307,8 +307,8 @@ class QueueManager:
                 video_url = f"https://www.youtube.com/watch?v={item.video_id}"
                 input_audio_path = os.path.join(job_dir, "input.wav")
 
-                # Opções do yt-dlp com extração de legendas VTT para a Camada 2 de letras
-                ydl_opts = {
+                # 1. Download do áudio do vídeo em formato WAV (isolado de erros de legendas)
+                ydl_opts_audio = {
                     "format": "bestaudio/best",
                     "outtmpl": os.path.join(job_dir, "input.%(ext)s"),
                     "postprocessors": [{
@@ -316,18 +316,33 @@ class QueueManager:
                         "preferredcodec": "wav",
                         "preferredquality": "192",
                     }],
-                    "writesubtitles": True,
-                    "writeautomaticsub": True,
-                    "subtitleslangs": ["pt", "en"],
-                    "subtitlesformat": "vtt",
                     "quiet": True,
                     "no_warnings": True,
                 }
 
                 item.percent = 10
-                item.message = "Baixando áudio e metadados..."
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                item.message = "Baixando áudio..."
+                with yt_dlp.YoutubeDL(ydl_opts_audio) as ydl:
                     ydl.download([video_url])
+
+                # 2. Tentativa não bloqueante de baixar legendas VTT para a Camada 2 de letras.
+                # Se o YouTube responder com HTTP 429 Too Many Requests nas legendas, não aborta a música!
+                try:
+                    ydl_opts_subs = {
+                        "skip_download": True,
+                        "writesubtitles": True,
+                        "writeautomaticsub": True,
+                        "subtitleslangs": ["pt", "en"],
+                        "subtitlesformat": "vtt",
+                        "outtmpl": os.path.join(job_dir, "input.%(ext)s"),
+                        "quiet": True,
+                        "no_warnings": True,
+                        "ignoreerrors": True,
+                    }
+                    with yt_dlp.YoutubeDL(ydl_opts_subs) as ydl_subs:
+                        ydl_subs.download([video_url])
+                except Exception as sub_err:
+                    logger.debug(f"Legendas do YouTube ignoradas ou rate-limit 429 (seguindo com LRCLIB/Whisper): {sub_err}")
 
                 if not os.path.exists(input_audio_path):
                     wavs = [f for f in os.listdir(job_dir) if f.endswith(".wav")]
