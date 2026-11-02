@@ -36,6 +36,17 @@ def clean_track_metadata(raw_title: str, raw_artist: str = "") -> tuple[str, str
 
     return clean_title or title, clean_artist or artist
 
+def sanitize_lyric_line(text: str) -> str:
+    """
+    Remove caracteres de notas musicais, ruídos e tags de áudio (ex: ♪, ♫, ♬, ♩, 🎵, 🎶, [Música]).
+    Garante que a frase da letra fique limpa e natural para leitura no karaokê.
+    """
+    cleaned = re.sub(r"[♪♫♬♩🎵🎶]+", "", text)
+    cleaned = re.sub(r"\[(Música|Musica|Music|Aplausos|Risos)\]", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\((Música|Musica|Music|Aplausos|Risos)\)", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
 def parse_lrc(lrc_text: str) -> List[Dict[str, Any]]:
     """
     Converte texto no formato LRC ([mm:ss.xx] Letra) em lista de dicionários com time em segundos.
@@ -49,6 +60,7 @@ def parse_lrc(lrc_text: str) -> List[Dict[str, Any]]:
             minutes = int(match.group(1))
             seconds = float(match.group(2))
             text = match.group(3).strip()
+            text = sanitize_lyric_line(text)
             time_sec = minutes * 60 + seconds
             if text:
                 lines.append({"time": round(time_sec, 2), "text": text})
@@ -75,6 +87,7 @@ def parse_vtt(vtt_text: str) -> List[Dict[str, Any]]:
             current_time = h * 3600 + m * 60 + s
         elif current_time is not None:
             clean_text = re.sub(r"<[^>]+>", "", raw_line).strip()
+            clean_text = sanitize_lyric_line(clean_text)
             if clean_text:
                 lines.append({"time": round(current_time, 2), "text": clean_text})
                 current_time = None
@@ -270,6 +283,7 @@ def transcribe_with_whisper(vocal_audio_path: str) -> Optional[Dict[str, Any]]:
         lines = []
         for seg in segments:
             text = seg.get("text", "").strip()
+            text = sanitize_lyric_line(text)
             if text:
                 lines.append({
                     "time": round(float(seg.get("start", 0.0)), 2),

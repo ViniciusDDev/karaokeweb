@@ -70,8 +70,13 @@ const procMsg = document.getElementById("proc-msg");
 const procPct = document.getElementById("proc-pct");
 const procBarFill = document.getElementById("proc-bar-fill");
 const btnProcPlayNow = document.getElementById("btn-proc-play-now");
+const procErrorBox = document.getElementById("proc-error-box");
+const procErrorMsg = document.getElementById("proc-error-msg");
+const btnProcRetry = document.getElementById("btn-proc-retry");
+const btnProcCancel = document.getElementById("btn-proc-cancel");
 
 // Passo 4: Player / Palco
+const karaokeStageCard = document.getElementById("karaoke-stage-card");
 const karaokeBg = document.getElementById("karaoke-bg");
 const karaokeOverlay = document.getElementById("karaoke-overlay");
 const currentTitle = document.getElementById("current-title");
@@ -316,6 +321,13 @@ function renderDrawerQueue(queue) {
           <span class="text-[10px] text-amber-300 truncate">${item.percent}%: ${item.message}</span>
         </div>
       `;
+    } else if (item.status === "error") {
+      statusClass = "border-rose-500/40 bg-rose-950/20";
+      actionBtn = `
+        <button onclick="retryQueueSong('${item.id}')" class="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-2.5 py-1.5 rounded-lg transition active:scale-95 shadow-sm flex items-center gap-1" title="${escapeHtml(item.error_message || 'Erro no processamento')}">
+          🔄 Tentar
+        </button>
+      `;
     } else {
       actionBtn = `<span class="text-[11px] text-slate-400 font-medium">Aguardando...</span>`;
     }
@@ -381,6 +393,19 @@ window.removeQueueSong = async function(itemId) {
     }
   } catch (err) {
     alert("Erro ao remover: " + err.message);
+  }
+};
+
+window.retryQueueSong = async function(itemId) {
+  try {
+    const res = await fetch(`/api/queue/${itemId}/retry`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.detail || "Erro ao reiniciar processamento.");
+      return;
+    }
+  } catch (err) {
+    alert("Falha de conexão: " + err.message);
   }
 };
 
@@ -563,9 +588,22 @@ function updateProcessingView(item) {
     procSpinner.classList.add("hidden");
     btnProcPlayNow.classList.remove("hidden");
     btnProcPlayNow.onclick = () => playQueueSong(item.id);
+    if (procErrorBox) procErrorBox.classList.add("hidden");
+  } else if (item.status === "error") {
+    procSpinner.classList.add("hidden");
+    btnProcPlayNow.classList.add("hidden");
+    if (procErrorBox) {
+      procErrorBox.classList.remove("hidden");
+      if (procErrorMsg) procErrorMsg.textContent = item.error_message || item.message || "Erro durante o processamento da música.";
+      if (btnProcRetry) btnProcRetry.onclick = () => retryQueueSong(item.id);
+      if (btnProcCancel) btnProcCancel.onclick = async () => {
+        await removeQueueSong(item.id);
+      };
+    }
   } else {
     procSpinner.classList.remove("hidden");
     btnProcPlayNow.classList.add("hidden");
+    if (procErrorBox) procErrorBox.classList.add("hidden");
   }
 }
 
@@ -729,6 +767,15 @@ function updatePlaybackProgress() {
 
 let lastActiveIdx = -1;
 
+function cleanLyricText(text) {
+  if (!text) return "";
+  return text
+    .replace(/[♪♫♬♩🎵🎶]/g, "")
+    .replace(/^\s*[\(\[]\s*M[uú]sica\s*[\)\]]\s*/gi, "")
+    .replace(/[\(\[]\s*M[uú]sica\s*[\)\]]/gi, "")
+    .trim();
+}
+
 function escapeHtml(text) {
   if (!text) return "";
   return text
@@ -751,7 +798,9 @@ function renderSpotifyLyrics(lines) {
     return;
   }
 
-  lyricsScrollBox.innerHTML = lines.map((line, idx) => `
+  lyricsScrollBox.innerHTML = lines.map((line, idx) => {
+    const cleanedText = cleanLyricText(line.text) || "...";
+    return `
     <p
       id="lyric-line-${idx}"
       onclick="seekTo(${line.time})"
@@ -759,9 +808,10 @@ function renderSpotifyLyrics(lines) {
       data-time="${line.time}"
       title="Clique para ir para este trecho"
     >
-      ${escapeHtml(line.text)}
+      ${escapeHtml(cleanedText)}
     </p>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function updateLyrics(currentTime) {
@@ -1147,14 +1197,23 @@ function setupEventListeners() {
 
   if (btnToggleFullscreen) {
     btnToggleFullscreen.addEventListener("click", () => {
+      const stageCard = document.getElementById("karaoke-stage-card");
       if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen?.().catch(err => {
+        (stageCard || document.documentElement).requestFullscreen?.().catch(err => {
           console.warn("Tela cheia indisponível:", err);
         });
       } else {
         document.exitFullscreen?.().catch(err => {
           console.warn("Erro ao sair de tela cheia:", err);
         });
+      }
+    });
+
+    document.addEventListener("fullscreenchange", () => {
+      if (document.fullscreenElement) {
+        btnToggleFullscreen.innerHTML = "<span>✕ Sair Tela Cheia</span>";
+      } else {
+        btnToggleFullscreen.innerHTML = "<span>⛶ Tela Cheia</span>";
       }
     });
   }

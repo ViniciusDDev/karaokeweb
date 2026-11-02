@@ -35,6 +35,7 @@ class QueueItem(BaseModel):
     stems: Dict[str, str] = {}
     lyrics: Dict[str, Any] = {}
     created_at: float = 0.0
+    retries: int = 0
     error: Optional[str] = None
 
 class QueueManager:
@@ -134,10 +135,51 @@ class QueueManager:
                 if item.status == "processing":
                     # Não remove item enquanto estiver em processamento ativo
                     return False
+
+                # Exclui qualquer cache existente desta música para evitar arquivos corrompidos ou bloqueios
+                try:
+                    video_cache = os.path.join(CACHE_DIR, item.video_id)
+                    if os.path.exists(video_cache):
+                        shutil.rmtree(video_cache)
+                        logger.info(f"Cache excluído para '{item.title}' ({item.video_id})")
+                except Exception as ce:
+                    logger.warning(f"Aviso ao remover cache de {item.video_id}: {ce}")
+
+                # Limpa pasta de trabalho temporária
+                try:
+                    temp_job = os.path.join(TEMP_DIR, item.id)
+                    if os.path.exists(temp_job):
+                        shutil.rmtree(temp_job)
+                except Exception:
+                    pass
+
                 self.queue.pop(idx)
                 self.trigger_broadcast()
                 return True
         return False
+
+    def retry_item(self, item_id: str) -> bool:
+        """Reinicia o processamento de uma música que falhou."""
+        item = self.get_item(item_id)
+        if not item or item.status != "error":
+            return False
+
+        # Limpa cache anterior corrompido
+        try:
+            video_cache = os.path.join(CACHE_DIR, item.video_id)
+            if os.path.exists(video_cache):
+                shutil.rmtree(video_cache)
+        except Exception:
+            pass
+
+        item.status = "pending"
+        item.percent = 0
+        item.retries = 0
+        item.error = None
+        item.message = "Aguardando novo processamento..."
+        self._new_item_event.set()
+        self.trigger_broadcast()
+        return True
 
     def mark_playing(self, item_id: str) -> Optional[QueueItem]:
         target = None
@@ -178,14 +220,14 @@ class QueueManager:
         return False
 
     async def _queue_worker_loop(self):
-        """Loop contínuo que processa um item de cada vez em background."""
+        """Loop contínuo que processa um item de cada vez em background seguindo rigorosamente a ordem FIFO."""
         while self._running:
-            # Procura o próximo item pendente
+            # Procura o próximo item pendente em ordem estrita de chegada (created_at)
+            pending_items = [item for item in self.queue if item.status == "pending"]
             item_to_process = None
-            for item in self.queue:
-                if item.status == "pending":
-                    item_to_process = item
-                    break
+            if pending_items:
+                pending_items.sort(key=lambda x: x.created_at)
+                item_to_process = pending_items[0]
 
             if item_to_process is None:
                 # Aguarda novos itens
@@ -351,9 +393,16 @@ class QueueManager:
 
             except Exception as e:
                 logger.error(f"Erro ao processar '{item.title}': {e}", exc_info=True)
-                item.status = "error"
-                item.error = str(e)
-                item.message = f"Erro no processamento: {str(e)[:100]}"
+                if item.retries < 1:
+                    item.retries += 1
+                    item.status = "pending"
+                    item.percent = 0
+                    item.message = "Instabilidade detectada. Tentando novamente (auto-retry)..."
+                    logger.info(f"Auto-retry agendado para '{item.title}' (Tentativa {item.retries + 1})")
+                else:
+                    item.status = "error"
+                    item.error = str(e)
+                    item.message = f"Erro no processamento: {str(e)[:100]}"
 
         # Executa o pipeline de áudio no threadpool executor para não travar o loop do FastAPI
         await loop.run_in_executor(None, sync_pipeline)

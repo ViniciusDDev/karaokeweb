@@ -23,6 +23,56 @@
       transform: scale(1.05);
       transition: all 0.25s ease-out;
     }
+
+    /* Scrollbar moderna para as letras */
+    #lyrics-scroll-box {
+      overflow-x: hidden !important;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(56, 189, 248, 0.3) transparent;
+    }
+    #lyrics-scroll-box::-webkit-scrollbar {
+      width: 6px;
+      transition: width 0.3s ease;
+    }
+    #lyrics-scroll-box:hover::-webkit-scrollbar {
+      width: 10px;
+    }
+    #lyrics-scroll-box::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    #lyrics-scroll-box::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.25);
+      border-radius: 9999px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+      transition: background 0.2s ease, width 0.3s ease;
+    }
+    #lyrics-scroll-box::-webkit-scrollbar-thumb:hover {
+      background: rgba(56, 189, 248, 0.7);
+    }
+
+    /* Modo Telão / TV (Fullscreen real) */
+    #karaoke-stage-card:fullscreen {
+      width: 100vw !important;
+      height: 100vh !important;
+      max-width: none !important;
+      border-radius: 0 !important;
+      border: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: space-between !important;
+    }
+    #karaoke-stage-card:fullscreen #lyrics-scroll-box {
+      max-height: calc(100vh - 190px) !important;
+      padding-top: 25vh !important;
+      padding-bottom: 25vh !important;
+    }
+    #karaoke-stage-card:fullscreen .lyric-row {
+      font-size: clamp(1.75rem, 3.2vw, 3rem) !important;
+      line-height: 1.35 !important;
+    }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-sky-500 selection:text-white">
@@ -178,8 +228,27 @@
           </div>
         </div>
 
-        <!-- Ação Quando Pronta -->
+        <!-- Ação Quando Pronta / Erro -->
         <div id="proc-actions" class="w-full flex flex-col gap-2.5 pt-2">
+          <!-- Box de Erro no Processamento -->
+          <div id="proc-error-box" class="hidden w-full bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 flex flex-col items-center gap-3 text-center">
+            <p id="proc-error-msg" class="text-xs text-rose-300 font-medium">Ocorreu um erro no processamento.</p>
+            <div class="flex items-center gap-2 w-full">
+              <button
+                id="btn-proc-retry"
+                class="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 shadow"
+              >
+                <span>🔄 Tentar Novamente</span>
+              </button>
+              <button
+                id="btn-proc-cancel"
+                class="px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs py-2.5 rounded-xl transition"
+              >
+                Descartar
+              </button>
+            </div>
+          </div>
+
           <button
             id="btn-proc-play-now"
             class="hidden w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm py-4 rounded-2xl transition shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2 active:scale-95 animate-bounce"
@@ -204,7 +273,7 @@
     <section id="view-step-player" class="hidden w-full flex flex-col gap-6">
 
       <!-- Palco de Karaokê (Capa com Blur + Letras Sincronizadas) -->
-      <div class="relative w-full rounded-3xl overflow-hidden min-h-[460px] sm:min-h-[540px] border border-slate-800 flex flex-col justify-between shadow-2xl bg-slate-950">
+      <div id="karaoke-stage-card" class="relative w-full rounded-3xl overflow-hidden min-h-[460px] sm:min-h-[540px] border border-slate-800 flex flex-col justify-between shadow-2xl bg-slate-950">
         
         <!-- Fundo Blur da Capa -->
         <div id="karaoke-bg" class="absolute inset-0 bg-cover bg-center transition-all duration-700 scale-105 filter blur-md"></div>
@@ -257,7 +326,7 @@
           </div>
 
           <!-- Container com Lista Rolável de Letras (Estilo Spotify) -->
-          <div id="lyrics-scroll-box" class="w-full max-w-4xl max-h-[380px] sm:max-h-[460px] overflow-y-auto px-4 py-20 flex flex-col gap-5 sm:gap-7 text-center select-none scroll-smooth">
+          <div id="lyrics-scroll-box" class="w-full max-w-4xl max-h-[380px] sm:max-h-[460px] overflow-y-auto overflow-x-hidden px-4 py-20 flex flex-col gap-5 sm:gap-7 text-center select-none scroll-smooth">
             <div class="py-12 flex flex-col items-center gap-2 text-slate-400">
               <p class="text-lg sm:text-2xl font-bold">Pressione Play para começar!</p>
               <p class="text-xs text-slate-500">A letra sincronizada aparecerá aqui frase a frase.</p>

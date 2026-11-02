@@ -25,11 +25,51 @@ def ensure_ffmpeg():
         logger.warning(f"Não foi possível configurar FFmpeg via imageio-ffmpeg: {e}")
         return False
 
+def check_and_auto_enable_cuda():
+    """
+    Se uma GPU NVIDIA for detectada no sistema via nvidia-smi mas torch.cuda.is_available() for False,
+    garante a instalação automática dos wheels oficiais do PyTorch com suporte a CUDA 12.1.
+    """
+    if torch.cuda.is_available():
+        return True
+
+    if shutil.which("nvidia-smi"):
+        logger.info("GPU NVIDIA detectada no sistema. Ativando suporte a aceleração CUDA no PyTorch...")
+        try:
+            cmd = [
+                sys.executable, "-m", "pip", "install",
+                "torch", "torchaudio",
+                "--index-url", "https://download.pytorch.org/whl/cu121"
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode == 0:
+                logger.info("PyTorch CUDA instalado com sucesso! Aceleração por GPU ativa.")
+                return True
+            else:
+                logger.warning(f"Falha ao instalar PyTorch CUDA automaticamente: {res.stderr[:200]}")
+        except Exception as e:
+            logger.warning(f"Erro ao tentar instalar PyTorch CUDA: {e}")
+    return False
+
 def get_hardware_info():
     """Detecta GPU (CUDA) vs CPU e retorna os parâmetros ideais de desempenho."""
     has_cuda = torch.cuda.is_available()
+    if not has_cuda and shutil.which("nvidia-smi"):
+        # Tenta ativar e verificar se o ambiente passa a dispor de CUDA
+        check_and_auto_enable_cuda()
+        try:
+            test_cmd = [sys.executable, "-c", "import torch; exit(0 if torch.cuda.is_available() else 1)"]
+            if subprocess.run(test_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                has_cuda = True
+        except Exception:
+            pass
+
     if has_cuda:
-        device_name = torch.cuda.get_device_name(0)
+        try:
+            device_name = torch.cuda.get_device_name(0)
+        except Exception:
+            device_name = "NVIDIA CUDA"
+
         return {
             "device": "cuda",
             "device_name": device_name,
@@ -38,18 +78,12 @@ def get_hardware_info():
             "description": f"Aceleração GPU Ativada ({device_name})"
         }
     else:
-        has_nvidia_driver = bool(shutil.which("nvidia-smi"))
-        if has_nvidia_driver:
-            desc = "GPU NVIDIA Detectada (Execute iniciar_karaoke.bat para ativar CUDA)"
-        else:
-            desc = "Modo Economia de Recursos (CPU Otimizado)"
-
         return {
             "device": "cpu",
             "device_name": "CPU",
             "model_name": "htdemucs",
             "shifts": 0,
-            "description": desc
+            "description": "Modo Economia de Recursos (CPU Otimizado)"
         }
 
 def separate_vocals_lead_and_backing(vocals_data, sample_rate):

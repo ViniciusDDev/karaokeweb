@@ -255,6 +255,14 @@ async def api_play_queue(item_id: str):
         raise HTTPException(status_code=404, detail="Item não encontrado na fila.")
     return {"success": True, "item": item.model_dump()}
 
+@app.post("/api/queue/{item_id}/retry")
+async def api_retry_queue(item_id: str):
+    """Reinicia o processamento de uma música que falhou na fila."""
+    success = queue_manager.retry_item(item_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Item não encontrado na fila.")
+    return {"success": True}
+
 @app.post("/api/queue/skip")
 async def api_skip_queue():
     """Pula a música atual e avança para a próxima pronta."""

@@ -310,6 +310,20 @@
       }
     };
 
+    window.retryQueueSongMobile = async function(itemId) {
+      try {
+        const res = await fetch(`/api/queue/${itemId}/retry`, { method: "POST" });
+        if (res.ok) {
+          showToast("Tentando processar novamente!");
+        } else {
+          const err = await res.json();
+          alert(err.detail || "Não foi possível reiniciar.");
+        }
+      } catch (err) {
+        alert("Erro de conexão: " + err.message);
+      }
+    };
+
     // 6. Sincronização em Tempo Real via SSE da Fila
     function connectQueueEvents() {
       const evtSource = new EventSource("/api/queue/events");
@@ -342,6 +356,15 @@
           statusBadge = `<span class="bg-sky-500/20 text-sky-300 border border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-semibold">Pronta</span>`;
         } else if (item.status === "processing") {
           statusBadge = `<span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-semibold">Separando com IA (${item.percent}%)</span>`;
+        } else if (item.status === "error") {
+          statusBadge = `
+            <div class="flex items-center gap-2 mt-0.5">
+              <span class="bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.5 rounded text-[10px] font-semibold">Erro</span>
+              <button onclick="retryQueueSongMobile('${item.id}')" class="text-xs text-sky-400 hover:text-sky-300 font-bold underline">
+                🔄 Tentar
+              </button>
+            </div>
+          `;
         } else {
           statusBadge = `<span class="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px]">Aguardando (${idx + 1}º)</span>`;
         }
