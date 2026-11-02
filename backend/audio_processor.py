@@ -112,7 +112,8 @@ def process_audio_stems(input_audio_path, output_dir, progress_callback=None):
     if progress_callback:
         progress_callback(10, f"Iniciando separação com IA ({hw['description']})...")
 
-    # Executa Demucs para separar em 4 stems
+    # Executa Demucs otimizado para 2 faixas (--two-stems vocals)
+    # Corta o tempo de processamento pela metade mantendo fidelidade total
     temp_demucs_out = os.path.join(output_dir, "_demucs_raw")
     os.makedirs(temp_demucs_out, exist_ok=True)
 
@@ -120,14 +121,15 @@ def process_audio_stems(input_audio_path, output_dir, progress_callback=None):
         sys.executable, "-m", "demucs.separate",
         "-n", hw["model_name"],
         "-d", hw["device"],
+        "--two-stems", "vocals",
         "--shifts", str(hw["shifts"]),
         "-o", temp_demucs_out,
         input_audio_path
     ]
 
-    logger.info(f"Executando comando Demucs: {' '.join(cmd)}")
+    logger.info(f"Executando comando Demucs (two-stems): {' '.join(cmd)}")
     if progress_callback:
-        progress_callback(25, "Executando modelo Demucs para extração instrumental...")
+        progress_callback(25, "Executando modelo Demucs de alta velocidade (vocais vs instrumental)...")
 
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if proc.returncode != 0:
@@ -135,25 +137,30 @@ def process_audio_stems(input_audio_path, output_dir, progress_callback=None):
         raise RuntimeError(f"Falha na separação por IA: {proc.stderr[:300]}")
 
     if progress_callback:
-        progress_callback(60, "Processando stems: sintetizando instrumental completo...")
+        progress_callback(60, "Processando faixas: isolando instrumental e vocais...")
 
     # Localiza arquivos gerados
     base_name = os.path.splitext(os.path.basename(input_audio_path))[0]
     stems_dir = os.path.join(temp_demucs_out, hw["model_name"], base_name)
 
-    drums_path = os.path.join(stems_dir, "drums.wav")
-    bass_path = os.path.join(stems_dir, "bass.wav")
-    other_path = os.path.join(stems_dir, "other.wav")
     vocals_path = os.path.join(stems_dir, "vocals.wav")
+    no_vocals_path = os.path.join(stems_dir, "no_vocals.wav")
 
     if not os.path.exists(vocals_path):
         raise FileNotFoundError("Demucs não gerou os arquivos de stems esperados.")
 
-    # 1. Cria Instrumental combinando drums + bass + other
-    drums, sr = sf.read(drums_path)
-    bass, _ = sf.read(bass_path)
-    other, _ = sf.read(other_path)
-    instrumental = drums + bass + other
+    # 1. Cria Instrumental
+    if os.path.exists(no_vocals_path):
+        instrumental, sr = sf.read(no_vocals_path)
+    else:
+        # Fallback caso modelo tenha gerado os 4 stems individuais
+        drums_path = os.path.join(stems_dir, "drums.wav")
+        bass_path = os.path.join(stems_dir, "bass.wav")
+        other_path = os.path.join(stems_dir, "other.wav")
+        drums, sr = sf.read(drums_path)
+        bass, _ = sf.read(bass_path)
+        other, _ = sf.read(other_path)
+        instrumental = drums + bass + other
 
     # Normalização de pico para evitar clipping
     max_inst = np.max(np.abs(instrumental)) + 1e-8

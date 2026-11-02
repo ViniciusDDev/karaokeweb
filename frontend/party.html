@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>OpenKaraoke Party 📱 Pedir Música</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@700;800;900&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+    .font-brand { font-family: 'Poppins', sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col pb-12">
+
+  <!-- Header Mobile da Festa -->
+  <header class="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-lg shadow-md shadow-sky-500/20">
+        🎤
+      </div>
+      <div>
+        <h1 class="text-base font-brand font-extrabold bg-gradient-to-r from-sky-400 to-indigo-300 bg-clip-text text-transparent">
+          OpenKaraoke Party
+        </h1>
+        <p class="text-[10px] text-slate-400">Peça sua música pelo celular</p>
+      </div>
+    </div>
+    <div id="queue-badge" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 border border-slate-700 text-sky-400">
+      Fila: 0
+    </div>
+  </header>
+
+  <!-- Conteúdo Principal -->
+  <main class="flex-1 p-4 flex flex-col gap-5 max-w-md mx-auto w-full">
+
+    <!-- Identificação do Cantor -->
+    <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 shadow-lg flex flex-col gap-2">
+      <label for="input-user-name" class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+        <span>👤 Seu Nome ou Apelido:</span>
+      </label>
+      <input
+        type="text"
+        id="input-user-name"
+        placeholder="Ex: Carlos, Ana, Vinicius..."
+        maxlength="25"
+        class="bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 transition"
+      />
+      <p class="text-[10px] text-slate-400">Seu nome aparecerá na TV quando sua música for chamada!</p>
+    </div>
+
+    <!-- Navegação em Abas (Pesquisar / Fila da Festa) -->
+    <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+      <button id="tab-search" class="flex-1 py-2 text-xs font-bold rounded-lg bg-sky-500 text-white transition shadow-sm">
+        🔍 Pesquisar
+      </button>
+      <button id="tab-queue" class="flex-1 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-white transition">
+        📋 Fila da Festa (<span id="queue-count">0</span>)
+      </button>
+    </div>
+
+    <!-- Seção: Pesquisa do YouTube -->
+    <section id="section-search" class="flex flex-col gap-4">
+      <form id="form-search" class="flex gap-2">
+        <input
+          type="text"
+          id="input-query"
+          placeholder="Música ou Artista..."
+          class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500"
+          required
+        />
+        <button
+          type="submit"
+          class="bg-sky-500 hover:bg-sky-400 active:scale-95 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-md shadow-sky-500/25"
+        >
+          Buscar
+        </button>
+      </form>
+
+      <!-- Resultados -->
+      <div id="search-results" class="flex flex-col gap-3">
+        <div class="text-center py-8 text-slate-500 text-xs">
+          Digite o nome de uma música acima para buscar.
+        </div>
+      </div>
+    </section>
+
+    <!-- Seção: Fila da Festa -->
+    <section id="section-queue" class="hidden flex flex-col gap-3">
+      <div id="queue-list" class="flex flex-col gap-2.5">
+        <p class="text-center py-8 text-slate-500 text-xs">A fila da festa está vazia. Seja o primeiro a pedir uma música!</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Notificação Toast Flutuante -->
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow-xl transition-all duration-300 opacity-0 pointer-events-none flex items-center gap-2">
+    <span>✅</span>
+    <span id="toast-text">Música adicionada à fila!</span>
+  </div>
+
+  <script>
+    const inputUserName = document.getElementById("input-user-name");
+    const formSearch = document.getElementById("form-search");
+    const inputQuery = document.getElementById("input-query");
+    const searchResults = document.getElementById("search-results");
+    const sectionSearch = document.getElementById("section-search");
+    const sectionQueue = document.getElementById("section-queue");
+    const tabSearch = document.getElementById("tab-search");
+    const tabQueue = document.getElementById("tab-queue");
+    const queueList = document.getElementById("queue-list");
+    const queueCount = document.getElementById("queue-count");
+    const queueBadge = document.getElementById("queue-badge");
+    const toast = document.getElementById("toast");
+    const toastText = document.getElementById("toast-text");
+
+    // 1. Persistência do nome
+    const savedName = localStorage.getItem("openkaraoke_singer_name");
+    if (savedName) inputUserName.value = savedName;
+    inputUserName.addEventListener("input", (e) => {
+      localStorage.setItem("openkaraoke_singer_name", e.target.value.trim());
+    });
+
+    // 2. Abas
+    tabSearch.addEventListener("click", () => {
+      tabSearch.className = "flex-1 py-2 text-xs font-bold rounded-lg bg-sky-500 text-white transition shadow-sm";
+      tabQueue.className = "flex-1 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-white transition";
+      sectionSearch.classList.remove("hidden");
+      sectionQueue.classList.add("hidden");
+    });
+
+    tabQueue.addEventListener("click", () => {
+      tabQueue.className = "flex-1 py-2 text-xs font-bold rounded-lg bg-sky-500 text-white transition shadow-sm";
+      tabSearch.className = "flex-1 py-2 text-xs font-bold rounded-lg text-slate-400 hover:text-white transition";
+      sectionQueue.classList.remove("hidden");
+      sectionSearch.classList.add("hidden");
+    });
+
+    // 3. Notificação Toast
+    function showToast(msg) {
+      toastText.textContent = msg;
+      toast.classList.remove("opacity-0", "pointer-events-none");
+      toast.classList.add("opacity-100");
+      setTimeout(() => {
+        toast.classList.remove("opacity-100");
+        toast.classList.add("opacity-0", "pointer-events-none");
+      }, 3000);
+    }
+
+    // 4. Busca
+    formSearch.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const q = inputQuery.value.trim();
+      if (!q) return;
+
+      searchResults.innerHTML = `
+        <div class="py-8 text-center text-slate-400 flex flex-col items-center gap-2">
+          <div class="w-6 h-6 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
+          <p class="text-xs">Buscando no YouTube...</p>
+        </div>
+      `;
+
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (!data.results || data.results.length === 0) {
+          searchResults.innerHTML = `<p class="text-center text-slate-400 py-6 text-xs">Nenhum resultado encontrado.</p>`;
+          return;
+        }
+
+        searchResults.innerHTML = data.results.map((vid) => `
+          <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex items-center gap-3 p-2.5 shadow-sm">
+            <img src="${vid.thumbnail}" class="w-16 h-12 object-cover rounded-lg flex-shrink-0 bg-slate-950">
+            <div class="flex-1 min-w-0">
+              <h4 class="text-xs font-bold text-slate-100 truncate">${vid.title}</h4>
+              <p class="text-[11px] text-slate-400 truncate">${vid.artist}</p>
+            </div>
+            <button
+              onclick='addToQueue(${JSON.stringify(vid).replace(/'/g, "&apos;")})'
+              class="flex-shrink-0 bg-sky-500 hover:bg-sky-400 active:scale-95 text-white font-bold text-xs px-3 py-2 rounded-lg transition"
+            >
+              Pedir
+            </button>
+          </div>
+        `).join("");
+      } catch (err) {
+        searchResults.innerHTML = `<p class="text-center text-red-400 py-6 text-xs">Erro na busca: ${err.message}</p>`;
+      }
+    });
+
+    // 5. Adicionar à Fila
+    window.addToQueue = async function(vid) {
+      const singer = inputUserName.value.trim() || "Convidado";
+      try {
+        const res = await fetch("/api/queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            video_id: vid.video_id,
+            title: vid.title,
+            artist: vid.artist,
+            thumbnail: vid.thumbnail,
+            duration: vid.duration,
+            requested_by: singer
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          alert(errData.detail || "Erro ao adicionar à fila.");
+          return;
+        }
+
+        showToast(`Música de ${singer} adicionada à fila!`);
+      } catch (err) {
+        alert("Falha na conexão: " + err.message);
+      }
+    };
+
+    // 6. Sincronização em Tempo Real via SSE da Fila
+    function connectQueueEvents() {
+      const evtSource = new EventSource("/api/queue/events");
+      evtSource.onmessage = (event) => {
+        try {
+          const queue = JSON.parse(event.data);
+          renderQueue(queue);
+        } catch (e) {}
+      };
+      evtSource.onerror = () => {
+        setTimeout(connectQueueEvents, 3000);
+      };
+    }
+
+    function renderQueue(queue) {
+      const count = queue.length;
+      queueCount.textContent = count;
+      queueBadge.textContent = `Fila: ${count}/20`;
+
+      if (count === 0) {
+        queueList.innerHTML = `<p class="text-center py-8 text-slate-500 text-xs">A fila da festa está vazia. Peça a primeira música!</p>`;
+        return;
+      }
+
+      queueList.innerHTML = queue.map((item, idx) => {
+        let statusBadge = "";
+        if (item.status === "playing") {
+          statusBadge = `<span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded text-[10px] font-bold animate-pulse">🎤 Cantando Agora</span>`;
+        } else if (item.status === "ready") {
+          statusBadge = `<span class="bg-sky-500/20 text-sky-300 border border-sky-500/30 px-2 py-0.5 rounded text-[10px] font-semibold">Pronta</span>`;
+        } else if (item.status === "processing") {
+          statusBadge = `<span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-semibold">Separando com IA (${item.percent}%)</span>`;
+        } else {
+          statusBadge = `<span class="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px]">Aguardando (${idx + 1}º)</span>`;
+        }
+
+        return `
+          <div class="bg-slate-900/90 border ${item.status === 'playing' ? 'border-emerald-500/50 bg-emerald-950/20' : 'border-slate-800'} rounded-xl p-3 flex items-center gap-3">
+            <span class="text-xs font-mono font-bold ${item.status === 'playing' ? 'text-emerald-400' : 'text-slate-500'}">#${idx + 1}</span>
+            <img src="${item.thumbnail}" class="w-12 h-10 object-cover rounded-lg bg-slate-950 flex-shrink-0">
+            <div class="flex-1 min-w-0">
+              <h4 class="text-xs font-bold text-white truncate">${item.title}</h4>
+              <p class="text-[11px] text-slate-400 truncate">Cantor(a): <span class="text-sky-300 font-medium">${item.requested_by}</span></p>
+              <div class="mt-1">${statusBadge}</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    connectQueueEvents();
+  </script>
+</body>
+</html>
