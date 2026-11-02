@@ -142,18 +142,24 @@ if errorlevel 1 goto error_activate
 :: Verificacao e Ativacao Automatica de GPU NVIDIA (CUDA)
 nvidia-smi >nul 2>&1
 if not errorlevel 1 (
-    ".venv\Scripts\python.exe" -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >nul 2>&1
+    ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
     if errorlevel 1 (
         echo.
         echo ========================================================
-        echo [GPU] GPU NVIDIA detectada no sistema.
-        echo [GPU] Baixando e ativando PyTorch com NVIDIA CUDA 12.1...
+        echo [GPU] GPU NVIDIA detectada (ex: RTX serie 50 / 40 / 30).
+        echo [GPU] Instalando PyTorch com suporte moderno CUDA (12.8 / 12.6)...
         echo ========================================================
-        ".venv\Scripts\python.exe" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+        ".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+        ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
+        if errorlevel 1 (
+            echo [GPU] Testando versao alternativa CUDA 12.6...
+            ".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu126
+        )
+        ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
         if not errorlevel 1 (
-            echo [GPU] Sucesso! Aceleracao por GPU NVIDIA CUDA ativada!
+            echo [GPU] Sucesso! Aceleracao por GPU NVIDIA CUDA ativada e validada!
         ) else (
-            echo [AVISO] Falha ao instalar PyTorch CUDA. O sistema usara CPU.
+            echo [AVISO] Falha ao validar kernel da GPU. O sistema podera usar CPU.
         )
     )
 )

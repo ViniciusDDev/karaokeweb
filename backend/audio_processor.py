@@ -25,44 +25,60 @@ def ensure_ffmpeg():
         logger.warning(f"Não foi possível configurar FFmpeg via imageio-ffmpeg: {e}")
         return False
 
+def is_cuda_functional():
+    """Valida se o PyTorch consegue realmente alocar tensores e executar kernels na GPU."""
+    if not torch.cuda.is_available():
+        return False
+    try:
+        x = torch.zeros(1, device="cuda")
+        del x
+        return True
+    except Exception as e:
+        logger.warning(f"CUDA detectado mas incapaz de executar tensores na GPU (incompatibilidade de arquitetura/sm_120): {e}")
+        return False
+
 def check_and_auto_enable_cuda():
     """
-    Se uma GPU NVIDIA for detectada no sistema via nvidia-smi mas torch.cuda.is_available() for False,
-    garante a instalação automática dos wheels oficiais do PyTorch com suporte a CUDA 12.1.
+    Se uma GPU NVIDIA for detectada no sistema via nvidia-smi mas CUDA não estiver funcional
+    (ex: RTX Série 50 Blackwell que requer CUDA 12.8 / 12.6 ou PyTorch CPU instalado),
+    garante a instalação dos wheels oficiais do PyTorch com suporte a CUDA moderno.
     """
-    if torch.cuda.is_available():
+    if is_cuda_functional():
         return True
 
     if shutil.which("nvidia-smi"):
         logger.info("GPU NVIDIA detectada no sistema. Ativando suporte a aceleração CUDA no PyTorch...")
-        try:
-            cmd = [
-                sys.executable, "-m", "pip", "install",
-                "torch", "torchaudio",
-                "--index-url", "https://download.pytorch.org/whl/cu121"
-            ]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if res.returncode == 0:
-                logger.info("PyTorch CUDA instalado com sucesso! Aceleração por GPU ativa.")
-                return True
-            else:
-                logger.warning(f"Falha ao instalar PyTorch CUDA automaticamente: {res.stderr[:200]}")
-        except Exception as e:
-            logger.warning(f"Erro ao tentar instalar PyTorch CUDA: {e}")
+        # Prioriza CUDA 12.8 (necessário para RTX série 50 Blackwell), depois 12.6 e 12.1
+        candidate_indices = [
+            ("cu128", "https://download.pytorch.org/whl/cu128"),
+            ("cu126", "https://download.pytorch.org/whl/cu126"),
+            ("cu121", "https://download.pytorch.org/whl/cu121")
+        ]
+        for cu_ver, index_url in candidate_indices:
+            try:
+                cmd = [
+                    sys.executable, "-m", "pip", "install", "--upgrade",
+                    "torch", "torchaudio",
+                    "--index-url", index_url
+                ]
+                logger.info(f"Instalando PyTorch com {cu_ver}...")
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if res.returncode == 0:
+                    test_cmd = [sys.executable, "-c", "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')"]
+                    if subprocess.run(test_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                        logger.info(f"PyTorch com {cu_ver} instalado e validado na GPU com sucesso!")
+                        return True
+            except Exception as e:
+                logger.warning(f"Erro ao tentar instalar PyTorch {cu_ver}: {e}")
     return False
 
 def get_hardware_info():
     """Detecta GPU (CUDA) vs CPU e retorna os parâmetros ideais de desempenho."""
-    has_cuda = torch.cuda.is_available()
+    has_cuda = is_cuda_functional()
     if not has_cuda and shutil.which("nvidia-smi"):
         # Tenta ativar e verificar se o ambiente passa a dispor de CUDA
         check_and_auto_enable_cuda()
-        try:
-            test_cmd = [sys.executable, "-c", "import torch; exit(0 if torch.cuda.is_available() else 1)"]
-            if subprocess.run(test_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-                has_cuda = True
-        except Exception:
-            pass
+        has_cuda = is_cuda_functional()
 
     if has_cuda:
         try:
