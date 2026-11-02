@@ -25,16 +25,26 @@ def ensure_ffmpeg():
         logger.warning(f"Não foi possível configurar FFmpeg via imageio-ffmpeg: {e}")
         return False
 
+_CUDA_FUNCTIONAL = None
+_HW_INFO_CACHE = None
+
 def is_cuda_functional():
     """Valida se o PyTorch no processo atual consegue alocar tensores e executar kernels na GPU."""
-    if not torch.cuda.is_available():
-        return False
+    global _CUDA_FUNCTIONAL
+    if _CUDA_FUNCTIONAL is not None:
+        return _CUDA_FUNCTIONAL
+
     try:
+        if not torch.cuda.is_available():
+            _CUDA_FUNCTIONAL = False
+            return False
         x = torch.zeros(1, device="cuda")
         del x
+        _CUDA_FUNCTIONAL = True
         return True
     except Exception as e:
-        logger.warning(f"CUDA detectado mas incapaz de executar tensores na GPU no processo atual: {e}")
+        logger.warning(f"CUDA detectado no PyTorch ({getattr(torch, '__version__', 'desconhecida')}), mas falhou ao executar tensor na GPU: {e}")
+        _CUDA_FUNCTIONAL = False
         return False
 
 def is_cuda_available_subproc():
@@ -44,7 +54,7 @@ def is_cuda_available_subproc():
             sys.executable, "-c",
             "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')"
         ]
-        res = subprocess.run(test_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
+        res = subprocess.run(test_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
         return res.returncode == 0
     except Exception:
         return False
@@ -77,59 +87,13 @@ def has_nvidia_hardware():
         pass
     return False
 
-def check_and_auto_enable_cuda():
-    """
-    Se uma GPU NVIDIA for detectada no sistema mas CUDA não estiver funcional no PyTorch atual,
-    garante a instalação dos wheels oficiais do PyTorch com suporte a CUDA moderna.
-    Prioriza cu128 (RTX série 50 Blackwell / sm_120), depois cu126, cu124 e cu121.
-    """
-    if is_cuda_functional() or is_cuda_available_subproc():
-        return True
-
-    if has_nvidia_hardware():
-        logger.info("GPU NVIDIA detectada no sistema. Ativando suporte a aceleração CUDA no PyTorch...")
-        # Prioriza CUDA 12.8 (essencial para RTX série 50 Blackwell, ex: RTX 5070 / sm_120), seguido por 12.6, 12.4 e 12.1
-        candidate_indices = [
-            ("cu128", "https://download.pytorch.org/whl/cu128"),
-            ("cu126", "https://download.pytorch.org/whl/cu126"),
-            ("cu124", "https://download.pytorch.org/whl/cu124"),
-            ("cu121", "https://download.pytorch.org/whl/cu121")
-        ]
-        for cu_ver, index_url in candidate_indices:
-            try:
-                cmd = [
-                    sys.executable, "-m", "pip", "install", "--upgrade", "--force-reinstall",
-                    "torch", "torchaudio",
-                    "--index-url", index_url,
-                    "--extra-index-url", "https://pypi.org/simple"
-                ]
-                logger.info(f"Tentando instalar PyTorch oficial compatível com CUDA ({cu_ver}) via {index_url}...")
-                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                if res.returncode == 0:
-                    test_cmd = [
-                        sys.executable, "-c",
-                        "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')"
-                    ]
-                    test_proc = subprocess.run(test_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    if test_proc.returncode == 0:
-                        logger.info(f"PyTorch com {cu_ver} instalado e validado na GPU com sucesso!")
-                        return True
-                    else:
-                        logger.warning(f"Instalação de {cu_ver} finalizou mas teste de tensor em GPU falhou.")
-                else:
-                    logger.warning(f"Pip retornou código {res.returncode} para {cu_ver}: {res.stderr[:200]}")
-            except Exception as e:
-                logger.warning(f"Erro ao tentar instalar PyTorch {cu_ver}: {e}")
-    return False
-
 def get_hardware_info():
-    """Detecta GPU (CUDA) vs CPU e retorna os parâmetros ideais de desempenho."""
-    has_cuda = is_cuda_functional() or is_cuda_available_subproc()
-    if not has_cuda and has_nvidia_hardware():
-        logger.info("GPU NVIDIA detectada, mas PyTorch CUDA ainda não está ativo. Iniciando configuração automática...")
-        check_and_auto_enable_cuda()
-        has_cuda = is_cuda_functional() or is_cuda_available_subproc()
+    """Detecta GPU (CUDA) vs CPU e retorna os parâmetros ideais de desempenho (em cache)."""
+    global _HW_INFO_CACHE
+    if _HW_INFO_CACHE is not None:
+        return _HW_INFO_CACHE
 
+    has_cuda = is_cuda_functional() or is_cuda_available_subproc()
     if has_cuda:
         device_name = "NVIDIA CUDA"
         try:
@@ -138,7 +102,7 @@ def get_hardware_info():
             else:
                 sub_res = subprocess.run(
                     [sys.executable, "-c", "import torch; print(torch.cuda.get_device_name(0))"],
-                    capture_output=True, text=True, timeout=5
+                    capture_output=True, text=True, timeout=10
                 )
                 if sub_res.returncode == 0 and sub_res.stdout.strip():
                     device_name = sub_res.stdout.strip()
@@ -146,7 +110,7 @@ def get_hardware_info():
             pass
 
         logger.info(f"Aceleração por GPU ativada com sucesso! Dispositivo: {device_name}")
-        return {
+        _HW_INFO_CACHE = {
             "device": "cuda",
             "device_name": device_name,
             "model_name": "htdemucs",
@@ -154,14 +118,15 @@ def get_hardware_info():
             "description": f"Aceleração GPU Ativada ({device_name})"
         }
     else:
-        logger.warning("Aceleração CUDA indisponível. Executando Demucs em modo CPU (-d cpu).")
-        return {
+        logger.info("Executando Demucs em modo CPU (-d cpu).")
+        _HW_INFO_CACHE = {
             "device": "cpu",
             "device_name": "CPU",
             "model_name": "htdemucs",
             "shifts": 0,
-            "description": "Modo Economia de Recursos (CPU Otimizado)"
+            "description": "Modo CPU (Multithreading)"
         }
+    return _HW_INFO_CACHE
 
 def separate_vocals_lead_and_backing(vocals_data, sample_rate):
     """

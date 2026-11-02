@@ -10,6 +10,16 @@ echo   OpenKaraoke (Plug and Play) - Inicializando...
 echo ========================================================
 echo.
 
+:: 0.1 Atualizacao automatica via Git
+if exist ".git" (
+    git --version >nul 2>&1
+    if not errorlevel 1 (
+        echo [GIT] Verificando e atualizando repositorio (git pull)...
+        git pull --no-rebase
+        echo.
+    )
+)
+
 :: 1. Deteccao Inteligente do Python
 set "PYTHON_CMD="
 
@@ -75,20 +85,19 @@ echo Interpretador detectado: %PYTHON_CMD%
 echo.
 
 :: 2. Criacao e Validacao do Ambiente Virtual (.venv)
-if not exist ".venv\installed.flag" goto clean_or_create_venv
-if not exist ".venv\Scripts\python.exe" goto clean_or_create_venv
+if exist ".venv\Scripts\python.exe" goto validate_venv_cfg
+
+echo [1/4] Criando ambiente virtual Python (.venv) com suporte a pacotes do sistema...
+%PYTHON_CMD% -m venv --system-site-packages .venv
+if errorlevel 1 goto error_create_venv
 goto activate_venv
 
-:clean_or_create_venv
-if not exist ".venv" goto create_venv
-echo Limpando ambiente virtual incompleto ou corrompido para evitar conflitos...
-rmdir /s /q ".venv" >nul 2>&1
-
-:create_venv
-echo [1/4] Criando ambiente virtual Python (.venv)...
-%PYTHON_CMD% -m venv .venv
-if errorlevel 1 goto error_create_venv
-goto install_dependencies
+:validate_venv_cfg
+:: Garante que o .venv possa enxergar bibliotecas instaladas no Python global (ex: PyTorch CUDA cu128)
+if exist ".venv\pyvenv.cfg" (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$cfg = Get-Content '.venv\pyvenv.cfg'; if ($cfg -match 'include-system-site-packages\s*=\s*false') { ($cfg -replace 'include-system-site-packages\s*=\s*false', 'include-system-site-packages = true') | Set-Content '.venv\pyvenv.cfg' }" >nul 2>&1
+)
+goto activate_venv
 
 :error_create_venv
 echo.
@@ -101,125 +110,96 @@ echo.
 pause
 exit /b 1
 
-:: 3. Instalacao de Dependencias
-:install_dependencies
-echo.
-echo [2/4] Atualizando ferramentas e instalando dependencias...
-echo Atualizando pip, setuptools e wheel...
-".venv\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
-if errorlevel 1 echo [AVISO] Falha ao atualizar o pip. Prosseguindo com a instalacao...
-
-echo.
-echo Instalando pacotes do requirements.txt com wheels pre-compiladas...
-".venv\Scripts\python.exe" -m pip install --prefer-binary -r requirements.txt
-if errorlevel 1 goto error_install_deps
-
-echo instalado > ".venv\installed.flag"
-echo Dependencias instaladas com sucesso!
-echo.
-goto activate_venv
-
-:error_install_deps
-echo.
-echo ========================================================
-echo [ERRO] Falha ao instalar as dependencias.
-echo.
-echo Dicas para solucao:
-echo 1. Verifique sua conexao com a internet.
-echo 2. Certifique-se de que o Python e de 64 bits.
-echo 3. Tente executar o comando manualmente para mais detalhes:
-echo    .venv\Scripts\python.exe -m pip install -r requirements.txt
-echo ========================================================
-echo.
-pause
-exit /b 1
-
-:: 4. Ativacao do Ambiente Virtual
+:: 3. Ativacao do Ambiente Virtual
 :activate_venv
-echo [3/4] Ativando ambiente virtual...
+echo [2/4] Ativando ambiente virtual...
 if not exist ".venv\Scripts\activate.bat" goto error_no_activate
 
 call ".venv\Scripts\activate.bat"
 if errorlevel 1 goto error_activate
 
-:: Verificacao e Ativacao Automatica de GPU NVIDIA CUDA
-set "HAS_NVIDIA="
+:: 4. Verificacao de PyTorch e Aceleracao GPU CUDA
+echo [3/4] Verificando integridade de IA e aceleracao por hardware...
 
-:: 1. Tenta nvidia-smi direto no PATH
+:: Teste rapido: PyTorch ja consegue executar tensores na GPU?
+".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda'); print('[GPU] PyTorch com aceleracao CUDA detectado e pronto: ' + torch.cuda.get_device_name(0) + ' (v' + torch.__version__ + ')')" 2>nul
+if not errorlevel 1 (
+    goto install_project_deps
+)
+
+:: Se nao funcionou de primeira, diagnostica o estado atual do PyTorch
+".venv\Scripts\python.exe" -c "import torch; print('[INFO] PyTorch instalado atualmente: v' + torch.__version__ + ' | CUDA disponivel: ' + str(torch.cuda.is_available()))" 2>nul
+
+:: Verifica presenca de GPU NVIDIA no sistema
+set "HAS_NVIDIA="
 nvidia-smi >nul 2>&1
 if not errorlevel 1 set "HAS_NVIDIA=1"
 
-:: 2. Se nao encontrou no PATH, procura em caminhos padrao da NVIDIA
 if not defined HAS_NVIDIA (
     if exist "%ProgramFiles%\NVIDIA Corporation\NVSMI\nvidia-smi.exe" (
         set "PATH=%ProgramFiles%\NVIDIA Corporation\NVSMI;%PATH%"
         set "HAS_NVIDIA=1"
     )
-    if exist "%SystemRoot%\System32\nvidia-smi.exe" (
-        set "HAS_NVIDIA=1"
-    )
+    if exist "%SystemRoot%\System32\nvidia-smi.exe" set "HAS_NVIDIA=1"
 )
 
-:: 3. Consulta adaptadores de video do Windows via PowerShell se ainda nao confirmou
 if not defined HAS_NVIDIA (
     powershell -NoProfile -Command "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name" 2>nul | findstr /I "NVIDIA" >nul 2>&1
     if not errorlevel 1 set "HAS_NVIDIA=1"
 )
 
 if not defined HAS_NVIDIA (
-    echo [INFO] Nenhuma GPU NVIDIA detectada no sistema. Executando em CPU.
-    goto prepare_temp
+    echo [INFO] Nenhuma GPU NVIDIA detectada no sistema. O processamento utilizara CPU multithreaded.
+    goto install_project_deps
 )
 
-:: Testa se PyTorch ja executa tensores na GPU com sucesso
-".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
-if not errorlevel 1 goto gpu_validated
-
 echo.
 echo ========================================================
-echo [GPU] GPU NVIDIA detectada no sistema.
-echo [GPU] Baixando e ativando PyTorch com aceleracao CUDA...
-echo [GPU] Isso e feito apenas na primeira vez para maxima velocidade.
+echo [GPU] GPU NVIDIA detectada no computador!
+echo [GPU] Configurando PyTorch oficial para aceleracao CUDA 12.8...
+echo [GPU] (RTX serie 50 Blackwell, 40, 30 e placas compativeis)
 echo ========================================================
 echo.
+".venv\Scripts\python.exe" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda'); print('[GPU] Sucesso! CUDA ativado: ' + torch.cuda.get_device_name(0))" 2>nul
+if not errorlevel 1 goto install_project_deps
 
-:: Tentativa 1: CUDA 12.8 (Oficial para RTX serie 50 Blackwell, ex: RTX 5070 / 5080 e placas modernas)
-echo [GPU] [1/4] Instalando PyTorch com NVIDIA CUDA 12.8 (RTX Serie 50 / Blackwell)...
-".venv\Scripts\python.exe" -m pip install --upgrade --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --extra-index-url https://pypi.org/simple
-".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
-if not errorlevel 1 goto gpu_validated
+echo.
+echo [AVISO] CUDA 12.8 nao inicializou tensores nesta GPU. Testando versao alternativa CUDA 12.4...
+".venv\Scripts\python.exe" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda'); print('[GPU] Sucesso! CUDA ativado: ' + torch.cuda.get_device_name(0))" 2>nul
+if not errorlevel 1 goto install_project_deps
 
-:: Tentativa 2: CUDA 12.6 (Compatibilidade intermediaria)
-echo [GPU] [2/4] Testando versao alternativa CUDA 12.6...
-".venv\Scripts\python.exe" -m pip install --upgrade --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu126 --extra-index-url https://pypi.org/simple
-".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
-if not errorlevel 1 goto gpu_validated
+echo.
+echo [AVISO] Aceleracao CUDA indisponivel no momento. O sistema executara em CPU multithreaded.
 
-:: Tentativa 3: CUDA 12.4 (Compatibilidade estavel RTX serie 40 / 30 / 20 e GTX)
-echo [GPU] [3/4] Testando versao alternativa CUDA 12.4...
-".venv\Scripts\python.exe" -m pip install --upgrade --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu124 --extra-index-url https://pypi.org/simple
-".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
-if not errorlevel 1 goto gpu_validated
+:install_project_deps
+echo.
+echo Verificando dependencias da aplicacao (requirements.txt)...
+".venv\Scripts\python.exe" -m pip install --prefer-binary -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu128
+if errorlevel 1 goto error_install_deps
 
-:: Tentativa 4: CUDA 12.1 (Drivers corporativos e legados)
-echo [GPU] [4/4] Testando versao alternativa CUDA 12.1...
-".venv\Scripts\python.exe" -m pip install --upgrade --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
-".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
-if not errorlevel 1 goto gpu_validated
-
-echo [AVISO] Nao foi possivel ativar kernel CUDA na GPU. O sistema utilizara CPU otimizado.
+echo instalado > ".venv\installed.flag"
+echo Todas as dependencias estao prontas!
+echo.
 goto prepare_temp
 
-:gpu_validated
-echo [GPU] Sucesso! Aceleracao por GPU NVIDIA CUDA ativada e validada!
-".venv\Scripts\python.exe" -c "import torch; print('[GPU] Dispositivo ativo:', torch.cuda.get_device_name(0))"
-goto prepare_temp
+:error_install_deps
+echo.
+echo ========================================================
+echo [ERRO] Falha ao instalar as dependencias.
+echo Dicas para solucao:
+echo 1. Verifique sua conexao com a internet.
+echo 2. Certifique-se de que o Python e de 64 bits.
+echo ========================================================
+echo.
+pause
+exit /b 1
 
 :error_no_activate
 echo.
 echo ========================================================
 echo [ERRO] Script de ativacao .venv\Scripts\activate.bat nao encontrado!
-echo Recomendado apagar a pasta .venv e reiniciar o script.
 echo ========================================================
 echo.
 pause
