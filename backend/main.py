@@ -17,6 +17,7 @@ import yt_dlp
 
 from backend.audio_processor import ensure_ffmpeg, get_hardware_info
 from backend.lyrics import (
+    clean_track_metadata,
     search_lrclib_options,
     transcribe_with_whisper,
     fetch_lyrics_cascade
@@ -155,10 +156,14 @@ def api_search(q: str = Query(..., min_length=1)):
                     duration = entry.get("duration") or 0
                     if duration > 720:  # Ignora faixas acima de 12 minutos
                         continue
+                    raw_title = entry.get("title", "Desconhecido")
+                    uploader = entry.get("uploader", "YouTube")
+                    clean_track, clean_artist = clean_track_metadata(raw_title, uploader)
+                    display_artist = clean_artist if clean_artist and clean_artist.lower() != "youtube" else uploader
                     results.append({
                         "video_id": entry.get("id"),
-                        "title": entry.get("title", "Desconhecido"),
-                        "artist": entry.get("uploader", "YouTube"),
+                        "title": raw_title,
+                        "artist": display_artist,
                         "duration": duration,
                         "thumbnail": entry.get("thumbnails", [{}])[-1].get("url", "") if entry.get("thumbnails") else f"https://i.ytimg.com/vi/{entry.get('id')}/hqdefault.jpg"
                     })

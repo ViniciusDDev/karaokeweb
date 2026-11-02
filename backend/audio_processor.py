@@ -34,25 +34,52 @@ def is_cuda_functional():
         del x
         return True
     except Exception as e:
-        logger.warning(f"CUDA detectado mas incapaz de executar tensores na GPU (incompatibilidade de arquitetura/sm_120): {e}")
+        logger.warning(f"CUDA detectado mas incapaz de executar tensores na GPU: {e}")
         return False
+
+def has_nvidia_hardware():
+    """Detecta se há hardware ou driver NVIDIA instalado no sistema operacional."""
+    if shutil.which("nvidia-smi"):
+        return True
+    for p in [
+        r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+        r"C:\Windows\System32\nvidia-smi.exe"
+    ]:
+        if os.path.exists(p):
+            return True
+    try:
+        import ctypes
+        if hasattr(ctypes, "windll"):
+            ctypes.windll.LoadLibrary("nvcuda.dll")
+            return True
+    except Exception:
+        pass
+    try:
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"],
+            capture_output=True, text=True, timeout=3
+        )
+        if "NVIDIA" in res.stdout.upper():
+            return True
+    except Exception:
+        pass
+    return False
 
 def check_and_auto_enable_cuda():
     """
-    Se uma GPU NVIDIA for detectada no sistema via nvidia-smi mas CUDA não estiver funcional
-    (ex: RTX Série 50 Blackwell que requer CUDA 12.8 / 12.6 ou PyTorch CPU instalado),
-    garante a instalação dos wheels oficiais do PyTorch com suporte a CUDA moderno.
+    Se uma GPU NVIDIA for detectada no sistema mas CUDA não estiver funcional no PyTorch atual,
+    garante a instalação dos wheels oficiais do PyTorch com suporte a CUDA moderna.
     """
     if is_cuda_functional():
         return True
 
-    if shutil.which("nvidia-smi"):
+    if has_nvidia_hardware():
         logger.info("GPU NVIDIA detectada no sistema. Ativando suporte a aceleração CUDA no PyTorch...")
-        # Prioriza CUDA 12.8 (necessário para RTX série 50 Blackwell), depois 12.6 e 12.1
+        # Prioriza CUDA 12.4 (ampla compatibilidade GTX/RTX), depois 12.1 e 12.6
         candidate_indices = [
-            ("cu128", "https://download.pytorch.org/whl/cu128"),
-            ("cu126", "https://download.pytorch.org/whl/cu126"),
-            ("cu121", "https://download.pytorch.org/whl/cu121")
+            ("cu124", "https://download.pytorch.org/whl/cu124"),
+            ("cu121", "https://download.pytorch.org/whl/cu121"),
+            ("cu126", "https://download.pytorch.org/whl/cu126")
         ]
         for cu_ver, index_url in candidate_indices:
             try:
@@ -75,7 +102,7 @@ def check_and_auto_enable_cuda():
 def get_hardware_info():
     """Detecta GPU (CUDA) vs CPU e retorna os parâmetros ideais de desempenho."""
     has_cuda = is_cuda_functional()
-    if not has_cuda and shutil.which("nvidia-smi"):
+    if not has_cuda and has_nvidia_hardware():
         # Tenta ativar e verificar se o ambiente passa a dispor de CUDA
         check_and_auto_enable_cuda()
         has_cuda = is_cuda_functional()
@@ -173,12 +200,14 @@ def process_audio_stems(input_audio_path, output_dir, progress_callback=None):
     temp_demucs_out = os.path.join(output_dir, "_demucs_raw")
     os.makedirs(temp_demucs_out, exist_ok=True)
 
+    num_jobs = max(1, min(4, (os.cpu_count() or 2) - 1))
     cmd = [
         sys.executable, "-m", "demucs.separate",
         "-n", hw["model_name"],
         "-d", hw["device"],
         "--two-stems", "vocals",
         "--shifts", str(hw["shifts"]),
+        "-j", str(num_jobs),
         "-o", temp_demucs_out,
         input_audio_path
     ]

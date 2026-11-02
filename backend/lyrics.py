@@ -1,38 +1,51 @@
 import re
 import os
 import logging
+import unicodedata
 from typing import Dict, Any, List, Optional
 import httpx
 
 logger = logging.getLogger("openkaraoke.lyrics")
 
+def strip_accents(text: str) -> str:
+    """Remove marcas diacríticas/acentos de uma string (ex: 'Evidências' -> 'Evidencias')."""
+    return "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
+
 def clean_track_metadata(raw_title: str, raw_artist: str = "") -> tuple[str, str]:
     """
     Remove ruídos comuns de títulos do YouTube e extrai Artista e Nome da Faixa.
+    Trata separadores com hífen padrão, en-dash, em-dash, barras e dois pontos.
     Ex: 'Chitãozinho & Xororó - Evidências (Clipe Oficial) [4K]' -> ('Evidências', 'Chitãozinho & Xororó')
     """
     title = raw_title.strip()
     artist = (raw_artist or "").strip()
 
-    # Remove tags comuns entre colchetes e parênteses
+    # Remove tags comuns entre colchetes, parênteses e marcadores promocionais
     noise_pattern = re.compile(
-        r"(\[.*?\]|\(.*?\)|\|.*?$|feat\..*?$|ft\..*?$|prod\..*?$|official|video|clipe|áudio|audio|oficial|4k|hd|remastered|lyrics|karaoke|ao vivo|live)",
+        r"(\[.*?\]|\(.*?\)|\|.*?$|feat\..*?$|ft\..*?$|prod\..*?$|official|video|clipe|áudio|audio|oficial|4k|hd|remastered|remaster|lyrics|karaoke|ao vivo|live|legendado|videoclipe)",
         flags=re.IGNORECASE
     )
 
-    # Verifica se há separador clássico 'Artista - Música'
-    if " - " in title:
-        parts = title.split(" - ", 1)
-        part_artist = noise_pattern.sub("", parts[0]).strip()
-        part_track = noise_pattern.sub("", parts[1]).strip()
-        if part_artist and part_track:
-            return part_track, part_artist
+    # Separadores comuns no YouTube: ' - ', ' – ', ' — ', ' | ', ' : ', ': '
+    delimiters = [" - ", " – ", " — ", " | ", " : ", ": "]
+    for delim in delimiters:
+        if delim in title:
+            parts = title.split(delim, 1)
+            p1 = noise_pattern.sub("", parts[0]).strip()
+            p2 = noise_pattern.sub("", parts[1]).strip()
+            p1 = re.sub(r"\s+", " ", p1).strip()
+            p2 = re.sub(r"\s+", " ", p2).strip()
+            if p1 and p2:
+                # Na maioria dos títulos mundiais o formato é 'Artista - Música'
+                # Retorna (track, artist)
+                return p2, p1
 
     clean_title = noise_pattern.sub("", title).strip()
-    clean_artist = noise_pattern.sub("", artist).strip()
-    # Remove múltiplos espaços
     clean_title = re.sub(r"\s+", " ", clean_title).strip()
-    clean_artist = re.sub(r"\s+", " ", clean_artist).strip()
+
+    clean_artist = noise_pattern.sub("", artist).strip()
+    # Remove sufixos de canais de gravadoras/VEVO
+    clean_artist = re.sub(r"(vevo|oficial|official|music|records|gravadora|canal)$", "", clean_artist, flags=re.IGNORECASE).strip()
 
     return clean_title or title, clean_artist or artist
 
@@ -103,36 +116,40 @@ def score_lrclib_candidate(item: Dict[str, Any], target_track: str, target_artis
     t_track = target_track.lower().strip()
     t_artist = target_artist.lower().strip()
 
+    # Prioriza fortemente faixas com letras sincronizadas
+    if item.get("syncedLyrics"):
+        score += 20.0
+
     # Penaliza versões traduzidas indesejadas (ex: espanhol ou acústico quando não solicitado)
-    bad_tags = ["en español", "versión en español", "version en espanol", "spanish version", "en castellano", "traducción", "cover"]
+    bad_tags = ["en español", "versión en español", "version en espanol", "spanish version", "en castellano", "traducción", "cover", "karaoke", "instrumental"]
     for tag in bad_tags:
         if tag in cand_track and tag not in t_track:
-            score -= 15.0
+            score -= 25.0
 
     # Correspondência de faixa
     if t_track and t_track == cand_track:
-        score += 10.0
+        score += 15.0
     elif t_track and t_track in cand_track:
-        score += 5.0
+        score += 8.0
 
     # Correspondência de artista
     if t_artist and t_artist in cand_artist:
-        score += 8.0
+        score += 15.0
     elif t_artist:
         artist_words = [w for w in t_artist.split() if len(w) > 3]
         if any(w in cand_artist for w in artist_words):
-            score += 4.0
+            score += 10.0
 
     # Correspondência de duração
     cand_dur = item.get("duration")
     if target_dur and cand_dur:
         diff = abs(cand_dur - target_dur)
-        if diff <= 6:
-            score += 5.0
-        elif diff <= 15:
-            score += 2.0
-        elif diff > 50:
-            score -= 4.0
+        if diff <= 8:
+            score += 8.0
+        elif diff <= 20:
+            score += 4.0
+        elif diff > 60:
+            score -= 5.0
 
     return score
 
@@ -140,35 +157,52 @@ def score_lrclib_candidate(item: Dict[str, Any], target_track: str, target_artis
 # Camada 1: LRCLIB (Busca Exata e Busca Ampla)
 # -------------------------------------------------------------
 async def fetch_lyrics_lrclib(track: str, artist: str = "", duration: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    """Consulta a API LRCLIB com estratégias em cascata e ranqueamento inteligente."""
-    async with httpx.AsyncClient(timeout=6.0) as client:
-        # 1. Tentativa com parâmetros diretos
-        try:
-            params: Dict[str, Any] = {"track_name": track}
-            if artist:
-                params["artist_name"] = artist
-            if duration:
-                params["duration"] = duration
-
-            resp = await client.get("https://lrclib.net/api/get", params=params)
-            if resp.status_code == 200:
-                data = resp.json()
-                synced = data.get("syncedLyrics")
-                if synced:
-                    parsed = parse_lrc(synced)
-                    if parsed:
-                        logger.info(f"Camada 1: Letra sincronizada obtida no LRCLIB direto para '{track}' ({artist})")
-                        return {"source": "lrclib", "synced": True, "lines": parsed}
-        except Exception as e:
-            logger.debug(f"LRCLIB get falhou: {e}")
-
-        # 2. Tentativa por busca ampla com query composta e ranqueamento de candidatos
-        queries = []
+    """Consulta a API LRCLIB com estratégias em cascata inteligente e desacentuação resiliente."""
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenKaraoke/1.0"}
+    async with httpx.AsyncClient(timeout=6.0, headers=headers) as client:
+        # 1. Tentativas com endpoint exato /api/get
+        # Tenta na ordem: (artista, faixa), (faixa, artista), apenas (faixa)
+        get_attempts = []
         if artist and track:
-            queries.append(f"{artist} {track}")
-        queries.append(track)
+            get_attempts.append({"artist_name": artist, "track_name": track})
+            get_attempts.append({"artist_name": track, "track_name": artist})
+        if track:
+            get_attempts.append({"track_name": track})
 
-        for q in queries:
+        for p in get_attempts:
+            try:
+                params = dict(p)
+                if duration:
+                    params["duration"] = duration
+                resp = await client.get("https://lrclib.net/api/get", params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    synced = data.get("syncedLyrics")
+                    if synced:
+                        parsed = parse_lrc(synced)
+                        if parsed:
+                            logger.info(f"Camada 1: Letra sincronizada obtida no LRCLIB direto para '{params.get('track_name')}'")
+                            return {"source": "lrclib", "synced": True, "lines": parsed}
+            except Exception as e:
+                logger.debug(f"LRCLIB get falhou: {e}")
+
+        # 2. Tentativa por busca ampla com query composta e desacentuação (evita erro 503 do MeiliSearch)
+        search_queries = []
+        if artist and track:
+            search_queries.append(f"{artist} {track}")
+            search_queries.append(f"{strip_accents(artist)} {strip_accents(track)}")
+        if track:
+            search_queries.append(track)
+            search_queries.append(strip_accents(track))
+
+        # Remove duplicatas preservando a ordem
+        unique_queries = []
+        for q in search_queries:
+            q_clean = q.strip()
+            if q_clean and q_clean not in unique_queries:
+                unique_queries.append(q_clean)
+
+        for q in unique_queries:
             try:
                 resp = await client.get("https://lrclib.net/api/search", params={"q": q})
                 if resp.status_code == 200:
@@ -184,8 +218,7 @@ async def fetch_lyrics_lrclib(track: str, artist: str = "", duration: Optional[i
                         if candidates:
                             candidates.sort(key=lambda x: x[0], reverse=True)
                             best_score, best_item = candidates[0]
-                            # Só descarta se a pontuação for muito negativa (penalidade alta de idioma)
-                            if best_score >= -5.0:
+                            if best_score >= 0.0:
                                 parsed = parse_lrc(best_item["syncedLyrics"])
                                 if parsed:
                                     logger.info(f"Camada 1: Letra ranqueada (score {best_score}) para '{best_item.get('trackName')}' ({best_item.get('artistName')})")
@@ -204,29 +237,36 @@ async def search_lrclib_options(query: str) -> List[Dict[str, Any]]:
     if not clean_q:
         return []
 
-    async with httpx.AsyncClient(timeout=6.0) as client:
-        try:
-            resp = await client.get("https://lrclib.net/api/search", params={"q": clean_q})
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, list):
-                    for item in data:
-                        synced = item.get("syncedLyrics")
-                        if synced:
-                            parsed = parse_lrc(synced)
-                            if parsed:
-                                preview = " / ".join([line["text"] for line in parsed[:3]])
-                                options.append({
-                                    "id": item.get("id"),
-                                    "track_name": item.get("trackName"),
-                                    "artist_name": item.get("artistName"),
-                                    "album_name": item.get("albumName"),
-                                    "duration": item.get("duration"),
-                                    "preview": preview,
-                                    "lines": parsed
-                                })
-        except Exception as e:
-            logger.warning(f"Erro ao buscar opções no LRCLIB: {e}")
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenKaraoke/1.0"}
+    async with httpx.AsyncClient(timeout=6.0, headers=headers) as client:
+        # Testa tanto a query original quanto a versão sem acentos
+        queries_to_try = [clean_q, strip_accents(clean_q)]
+        for q in set(queries_to_try):
+            try:
+                resp = await client.get("https://lrclib.net/api/search", params={"q": q})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, list):
+                        for item in data:
+                            synced = item.get("syncedLyrics")
+                            if synced:
+                                parsed = parse_lrc(synced)
+                                if parsed:
+                                    preview = " / ".join([line["text"] for line in parsed[:3]])
+                                    if not any(o.get("id") == item.get("id") for o in options):
+                                        options.append({
+                                            "id": item.get("id"),
+                                            "track_name": item.get("trackName"),
+                                            "artist_name": item.get("artistName"),
+                                            "album_name": item.get("albumName"),
+                                            "duration": item.get("duration"),
+                                            "preview": preview,
+                                            "lines": parsed
+                                        })
+            except Exception as e:
+                logger.warning(f"Erro ao buscar opções no LRCLIB: {e}")
+            if options:
+                break
 
     return options
 
@@ -345,3 +385,4 @@ async def fetch_lyrics_cascade(
         "synced": False,
         "lines": [{"time": 0.0, "text": "Letra sincronizada não encontrada. Cante livremente!"}]
     }
+

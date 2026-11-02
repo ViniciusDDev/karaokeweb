@@ -143,8 +143,33 @@ call ".venv\Scripts\activate.bat"
 if errorlevel 1 goto error_activate
 
 :: Verificacao e Ativacao Automatica de GPU NVIDIA CUDA
+set "HAS_NVIDIA="
+
+:: 1. Tenta nvidia-smi direto no PATH
 nvidia-smi >nul 2>&1
-if errorlevel 1 goto prepare_temp
+if not errorlevel 1 set "HAS_NVIDIA=1"
+
+:: 2. Se nao encontrou no PATH, procura em caminhos padrao da NVIDIA
+if not defined HAS_NVIDIA (
+    if exist "%ProgramFiles%\NVIDIA Corporation\NVSMI\nvidia-smi.exe" (
+        set "PATH=%ProgramFiles%\NVIDIA Corporation\NVSMI;%PATH%"
+        set "HAS_NVIDIA=1"
+    )
+    if exist "%SystemRoot%\System32\nvidia-smi.exe" (
+        set "HAS_NVIDIA=1"
+    )
+)
+
+:: 3. Consulta adaptadores de video do Windows via PowerShell se ainda nao confirmou
+if not defined HAS_NVIDIA (
+    powershell -NoProfile -Command "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name" 2>nul | findstr /I "NVIDIA" >nul 2>&1
+    if not errorlevel 1 set "HAS_NVIDIA=1"
+)
+
+if not defined HAS_NVIDIA (
+    echo [INFO] Nenhuma GPU NVIDIA detectada no sistema. Executando em CPU.
+    goto prepare_temp
+)
 
 :: Testa se PyTorch ja executa tensores na GPU com sucesso
 ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
@@ -153,32 +178,35 @@ if not errorlevel 1 goto gpu_validated
 echo.
 echo ========================================================
 echo [GPU] GPU NVIDIA detectada no sistema.
-echo [GPU] Configurando PyTorch com aceleracao CUDA moderna...
+echo [GPU] Baixando e ativando PyTorch com aceleracao CUDA...
+echo [GPU] Isso e feito apenas na primeira vez para maxima velocidade.
 echo ========================================================
+echo.
 
-:: Tentativa 1: CUDA 12.8 (ideal para serie RTX 50 Blackwell e placas recentes)
-echo [GPU] Instalando PyTorch compativel com CUDA 12.8...
-".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+:: Tentativa 1: CUDA 12.4 (ampla compatibilidade GTX e RTX series 10, 20, 30, 40 e 50)
+echo [GPU] Instalando PyTorch com NVIDIA CUDA 12.4...
+".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu124
 ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
 if not errorlevel 1 goto gpu_validated
 
-:: Tentativa 2: CUDA 12.6
-echo [GPU] Testando versao alternativa CUDA 12.6...
-".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu126
-".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
-if not errorlevel 1 goto gpu_validated
-
-:: Tentativa 3: CUDA 12.1
+:: Tentativa 2: CUDA 12.1 (compatibilidade com drivers estaveis)
 echo [GPU] Testando versao alternativa CUDA 12.1...
 ".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 ".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
 if not errorlevel 1 goto gpu_validated
 
-echo [AVISO] Nao foi possivel ativar kernel CUDA na GPU. O sistema utilizara CPU.
+:: Tentativa 3: CUDA 12.6
+echo [GPU] Testando versao alternativa CUDA 12.6...
+".venv\Scripts\python.exe" -m pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu126
+".venv\Scripts\python.exe" -c "import torch; assert torch.cuda.is_available(); torch.zeros(1, device='cuda')" >nul 2>&1
+if not errorlevel 1 goto gpu_validated
+
+echo [AVISO] Nao foi possivel ativar kernel CUDA na GPU. O sistema utilizara CPU otimizado.
 goto prepare_temp
 
 :gpu_validated
 echo [GPU] Sucesso! Aceleracao por GPU NVIDIA CUDA ativada e validada!
+".venv\Scripts\python.exe" -c "import torch; print('[GPU] Dispositivo ativo:', torch.cuda.get_device_name(0))"
 goto prepare_temp
 
 :error_no_activate
