@@ -20,6 +20,7 @@ from backend.lyrics import (
     clean_track_metadata,
     search_lrclib_options,
     transcribe_with_whisper,
+    is_whisper_available,
     fetch_lyrics_cascade
 )
 from backend.queue_manager import queue_manager, QueueItem
@@ -331,13 +332,17 @@ async def api_lyrics_whisper(queue_id: str):
     if not item:
         raise HTTPException(status_code=404, detail="Música não encontrada.")
 
+    avail, msg = is_whisper_available()
+    if not avail:
+        raise HTTPException(status_code=400, detail=msg)
+
     vocal_path = os.path.join(TEMP_DIR, queue_id, "lead_vocal.wav")
     if not os.path.exists(vocal_path):
         raise HTTPException(status_code=400, detail="Faixa de voz isolada ainda não está pronta.")
 
     whisper_result = transcribe_with_whisper(vocal_path)
     if not whisper_result:
-        raise HTTPException(status_code=500, detail="Whisper não conseguiu transcrever ou pacote não disponível.")
+        raise HTTPException(status_code=500, detail="Whisper não conseguiu transcrever o áudio isolado desta faixa.")
 
     queue_manager.update_lyrics(queue_id, whisper_result)
     return {"success": True, "lyrics": whisper_result}
@@ -362,7 +367,7 @@ def api_get_hall_of_fame():
 @app.post("/api/hall-of-fame")
 def api_add_hall_of_fame(entry: ScoreEntry):
     """Adiciona um cantor e pontuação ao Hall da Fama."""
-    clamped_score = max(75, min(100, entry.score))
+    clamped_score = max(0, min(100, entry.score))
     hall_of_fame.append({
         "singer": entry.singer.strip() or "Cantor Misterioso",
         "score": clamped_score,

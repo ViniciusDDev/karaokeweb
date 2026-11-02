@@ -24,6 +24,37 @@
       transition: all 0.25s ease-out;
     }
 
+    /* Efeito de Karaokê com Wipe de Sílabas / Palavras */
+    .karaoke-word {
+      display: inline-block;
+      transition: color 0.1s ease, transform 0.1s ease;
+      white-space: pre;
+    }
+    .word-upcoming {
+      color: #94a3b8;
+      opacity: 0.85;
+    }
+    .word-active {
+      display: inline-block;
+      background: linear-gradient(
+        90deg,
+        #fde047 0%,
+        #fde047 var(--word-prog, 0%),
+        #94a3b8 var(--word-prog, 0%),
+        #94a3b8 100%
+      );
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      transform: scale(1.08);
+      filter: drop-shadow(0 0 14px rgba(253, 224, 71, 0.8));
+    }
+    .word-sung {
+      color: #fde047;
+      text-shadow: 0 0 16px rgba(253, 224, 71, 0.6);
+      transform: scale(1.02);
+      -webkit-text-fill-color: #fde047;
+    }
+
     /* Scrollbar moderna para as letras */
     #lyrics-scroll-box {
       overflow-x: hidden !important;
@@ -549,7 +580,7 @@
 
       <div class="px-8 py-4 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-sky-500/20 border border-amber-500/50 flex flex-col items-center">
         <span id="final-score-number" class="text-5xl font-black text-amber-300 font-brand">95</span>
-        <span class="text-xs font-bold tracking-widest text-slate-300 uppercase mt-1">Pontos (75 a 100)</span>
+        <span class="text-xs font-bold tracking-widest text-slate-300 uppercase mt-1">Pontuação (0 a 100)</span>
       </div>
 
       <form id="form-hall" class="w-full flex flex-col gap-3">

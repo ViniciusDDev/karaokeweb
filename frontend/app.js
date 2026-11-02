@@ -623,6 +623,7 @@ async function loadKaraokeTrack(songData) {
   currentSongData = songData;
   currentLyrics = songData.lyrics?.lines || [];
   lastActiveIdx = -1;
+  resetMicStats();
 
   currentTitle.textContent = songData.title;
   currentArtist.textContent = songData.artist || "Artista";
@@ -812,15 +813,19 @@ function renderSpotifyLyrics(lines) {
 
   lyricsScrollBox.innerHTML = lines.map((line, idx) => {
     const cleanedText = cleanLyricText(line.text) || "...";
+    const words = cleanedText.split(/\s+/).filter(Boolean);
+    const wordsHtml = words.map((w, wIdx) => `<span id="lyric-word-${idx}-${wIdx}" class="karaoke-word word-upcoming">${escapeHtml(w)}</span>`).join(" ");
+
     return `
     <p
       id="lyric-line-${idx}"
       onclick="seekTo(${line.time})"
       class="lyric-row text-slate-400 text-lg sm:text-2xl md:text-3xl font-semibold cursor-pointer transition-all duration-300 hover:text-sky-300 px-4 py-2 rounded-2xl"
       data-time="${line.time}"
+      data-words-count="${words.length}"
       title="Clique para ir para este trecho"
     >
-      ${escapeHtml(cleanedText)}
+      ${wordsHtml}
     </p>
   `;
   }).join("");
@@ -857,20 +862,92 @@ function updateLyrics(currentTime) {
     }
   }
 
-  if (activeIdx === lastActiveIdx) return;
-  lastActiveIdx = activeIdx;
+  // Transição de estrofes e destaque das linhas anteriores/posteriores
+  if (activeIdx !== lastActiveIdx) {
+    lastActiveIdx = activeIdx;
 
-  for (let i = 0; i < currentLyrics.length; i++) {
-    const el = document.getElementById(`lyric-line-${i}`);
-    if (!el) continue;
+    for (let i = 0; i < currentLyrics.length; i++) {
+      const el = document.getElementById(`lyric-line-${i}`);
+      if (!el) continue;
 
-    if (i === activeIdx) {
-      el.className = "lyric-row text-amber-300 text-2xl sm:text-4xl md:text-5xl font-black scale-105 drop-shadow-lg cursor-pointer transition-all duration-300 px-4 py-2 rounded-2xl";
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    } else if (i < activeIdx) {
-      el.className = "lyric-row text-slate-500 text-base sm:text-xl font-medium opacity-50 cursor-pointer transition-all duration-300 hover:text-slate-300 px-4 py-1.5 rounded-2xl";
-    } else {
-      el.className = "lyric-row text-slate-300 text-lg sm:text-2xl font-semibold opacity-90 cursor-pointer transition-all duration-300 hover:text-sky-300 px-4 py-1.5 rounded-2xl";
+      if (i === activeIdx) {
+        el.className = "lyric-row text-amber-300 text-2xl sm:text-4xl md:text-5xl font-black scale-105 drop-shadow-lg cursor-pointer transition-all duration-300 px-4 py-2 rounded-2xl";
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else if (i < activeIdx) {
+        el.className = "lyric-row text-slate-500 text-base sm:text-xl font-medium opacity-50 cursor-pointer transition-all duration-300 hover:text-slate-300 px-4 py-1.5 rounded-2xl";
+        const wCount = parseInt(el.dataset.wordsCount || "0", 10);
+        for (let w = 0; w < wCount; w++) {
+          const wEl = document.getElementById(`lyric-word-${i}-${w}`);
+          if (wEl && wEl.className !== "karaoke-word word-sung") {
+            wEl.className = "karaoke-word word-sung";
+            wEl.style.removeProperty("--word-prog");
+          }
+        }
+      } else {
+        el.className = "lyric-row text-slate-300 text-lg sm:text-2xl font-semibold opacity-90 cursor-pointer transition-all duration-300 hover:text-sky-300 px-4 py-1.5 rounded-2xl";
+        const wCount = parseInt(el.dataset.wordsCount || "0", 10);
+        for (let w = 0; w < wCount; w++) {
+          const wEl = document.getElementById(`lyric-word-${i}-${w}`);
+          if (wEl && wEl.className !== "karaoke-word word-upcoming") {
+            wEl.className = "karaoke-word word-upcoming";
+            wEl.style.removeProperty("--word-prog");
+          }
+        }
+      }
+    }
+  }
+
+  // Efeito Karaokê em tempo real: Wipe progressivo de sílabas e palavras na linha ativa
+  if (activeIdx >= 0 && activeIdx < currentLyrics.length) {
+    const curLine = currentLyrics[activeIdx];
+    const nextLine = currentLyrics[activeIdx + 1];
+    const lineStart = curLine.time;
+    const lineEl = document.getElementById(`lyric-line-${activeIdx}`);
+    const wordCount = lineEl ? parseInt(lineEl.dataset.wordsCount || "0", 10) : 0;
+
+    if (wordCount > 0) {
+      const naturalDuration = Math.max(1.8, wordCount * 0.52);
+      const gapToNext = nextLine ? (nextLine.time - lineStart) : naturalDuration;
+      const effectiveDuration = Math.max(1.5, Math.min(gapToNext, naturalDuration));
+      const elapsed = currentTime - lineStart;
+      const lineProg = Math.max(0, Math.min(1, elapsed / effectiveDuration));
+
+      const wordWeights = [];
+      let totalW = 0;
+      for (let w = 0; w < wordCount; w++) {
+        const wEl = document.getElementById(`lyric-word-${activeIdx}-${w}`);
+        const len = wEl ? Math.max(2, (wEl.textContent || "").trim().length) : 3;
+        wordWeights.push(len);
+        totalW += len;
+      }
+      totalW = totalW || 1;
+
+      let accW = 0;
+      for (let w = 0; w < wordCount; w++) {
+        const wEl = document.getElementById(`lyric-word-${activeIdx}-${w}`);
+        if (!wEl) continue;
+
+        const startFrac = accW / totalW;
+        const endFrac = (accW + wordWeights[w]) / totalW;
+        accW += wordWeights[w];
+
+        if (lineProg >= endFrac) {
+          if (wEl.className !== "karaoke-word word-sung") {
+            wEl.className = "karaoke-word word-sung";
+            wEl.style.removeProperty("--word-prog");
+          }
+        } else if (lineProg < startFrac) {
+          if (wEl.className !== "karaoke-word word-upcoming") {
+            wEl.className = "karaoke-word word-upcoming";
+            wEl.style.removeProperty("--word-prog");
+          }
+        } else {
+          // Palavra/sílaba sendo cantada agora: wipe gradiente horizontal contínuo
+          const intraProgress = Math.round(((lineProg - startFrac) / (endFrac - startFrac)) * 100);
+          wEl.className = "karaoke-word word-active";
+          wEl.style.setProperty("--word-prog", `${intraProgress}%`);
+        }
+      }
     }
   }
 }
@@ -920,7 +997,7 @@ async function searchLyricsOptions() {
   lyricsOptionsList.innerHTML = `
     <div class="py-6 text-center text-slate-400 flex flex-col items-center gap-2">
       <div class="w-6 h-6 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
-      <p class="text-xs">Buscando versões sincronizadas...</p>
+      <p class="text-xs">Buscando versões disponíveis no banco de dados...</p>
     </div>
   `;
 
@@ -929,27 +1006,36 @@ async function searchLyricsOptions() {
     const data = await res.json();
 
     if (!data.options || data.options.length === 0) {
-      lyricsOptionsList.innerHTML = `<p class="text-center text-slate-400 py-4 text-xs">Nenhuma letra sincronizada encontrada no LRCLIB. Experimente usar a IA Whisper abaixo.</p>`;
+      lyricsOptionsList.innerHTML = `<p class="text-center text-slate-400 py-4 text-xs">Nenhuma letra encontrada. Tente buscar apenas o nome da música ou use a IA Whisper abaixo.</p>`;
       return;
     }
 
-    lyricsOptionsList.innerHTML = data.options.map((opt) => `
+    lyricsOptionsList.innerHTML = data.options.map((opt) => {
+      const badge = opt.synced
+        ? `<span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] px-2 py-0.5 rounded-full font-bold">✨ Sincronizada</span>`
+        : `<span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[10px] px-2 py-0.5 rounded-full font-bold">📄 Texto Completo</span>`;
+
+      return `
       <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col gap-2 hover:border-sky-500/50 transition">
-        <div class="flex items-center justify-between">
-          <div>
-            <h4 class="text-xs font-bold text-white">${opt.track_name}</h4>
-            <p class="text-[11px] text-slate-400">${opt.artist_name} • ${opt.album_name || "Single"}</p>
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h4 class="text-xs font-bold text-white truncate max-w-[200px]">${escapeHtml(opt.track_name)}</h4>
+              ${badge}
+            </div>
+            <p class="text-[11px] text-slate-400 truncate">${escapeHtml(opt.artist_name)} • ${escapeHtml(opt.album_name || "Single")}</p>
           </div>
           <button
             onclick='selectLyricsOption(${JSON.stringify(opt).replace(/'/g, "&apos;")})'
-            class="bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition"
+            class="bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition whitespace-nowrap"
           >
             Usar Esta
           </button>
         </div>
-        <p class="text-[10px] text-slate-500 italic truncate">${opt.preview}</p>
+        <p class="text-[10px] text-slate-500 italic truncate">${escapeHtml(opt.preview)}</p>
       </div>
-    `).join("");
+    `;
+    }).join("");
   } catch (err) {
     lyricsOptionsList.innerHTML = `<p class="text-center text-red-400 py-4 text-xs">Erro na busca: ${err.message}</p>`;
   }
@@ -957,7 +1043,11 @@ async function searchLyricsOptions() {
 
 window.selectLyricsOption = async function(opt) {
   if (!currentSongData) return;
-  const newLyrics = { source: "lrclib_custom", synced: true, lines: opt.lines };
+  const newLyrics = {
+    source: opt.synced ? "lrclib_custom" : "lrclib_plain_custom",
+    synced: opt.synced,
+    lines: opt.lines
+  };
   try {
     await fetch("/api/lyrics/select", {
       method: "POST",
@@ -976,7 +1066,7 @@ window.selectLyricsOption = async function(opt) {
     updateLyrics(current);
 
     modalAdjustLyrics.classList.add("hidden");
-    alert("Letra sincronizada atualizada com sucesso!");
+    alert(opt.synced ? "Letra sincronizada atualizada com sucesso!" : "Letra em texto completo aplicada com rolagem compassada!");
   } catch (err) {
     alert("Erro ao aplicar letra: " + err.message);
   }
@@ -1129,8 +1219,27 @@ async function initMicrophone() {
   }
 }
 
+let micStats = {
+  totalTicks: 0,
+  voiceTicks: 0,
+  voiceEnergies: [],
+  vocalLineTicks: 0,
+  activeSingingDuringVocalLines: 0
+};
+
+function resetMicStats() {
+  micStats = {
+    totalTicks: 0,
+    voiceTicks: 0,
+    voiceEnergies: [],
+    vocalLineTicks: 0,
+    activeSingingDuringVocalLines: 0
+  };
+}
+
 function startMicSampling() {
   if (micInterval) clearInterval(micInterval);
+  resetMicStats();
   const dataArray = new Uint8Array(256);
 
   micInterval = setInterval(() => {
@@ -1139,31 +1248,95 @@ function startMicSampling() {
     let sum = 0;
     for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
     const avgEnergy = sum / dataArray.length;
-    if (avgEnergy > 18) singingSamples.push(avgEnergy);
+
+    micStats.totalTicks++;
+
+    const current = audioCtx.currentTime - startTime;
+    const isVocalLine = currentLyrics && currentLyrics.some(l => Math.abs(current - l.time) < 3.2);
+    if (isVocalLine) micStats.vocalLineTicks++;
+
+    // Sensibilidade de detecção de voz (filtra ruído de fundo do ambiente)
+    if (avgEnergy > 16) {
+      micStats.voiceTicks++;
+      micStats.voiceEnergies.push(avgEnergy);
+      if (isVocalLine) micStats.activeSingingDuringVocalLines++;
+    }
   }, 100);
 }
 
 function calculateScore() {
-  const sampleCount = singingSamples.length;
-  let baseScore = 80;
-  if (sampleCount > 50) baseScore += 10;
-  else if (sampleCount > 20) baseScore += 5;
+  // Se tocou menos de 3 segundos, pontuação mínima de teste
+  if (micStats.totalTicks < 30) {
+    return Math.floor(35 + (Date.now() % 6));
+  }
 
-  const pseudoRandom = (Date.now() % 9);
-  let finalScore = baseScore + pseudoRandom;
-  return Math.max(75, Math.min(100, finalScore));
+  // 1. Participação e Cobertura (0 a 45 pontos)
+  // Músicas típicas têm canto em cerca de 40% a 65% da sua duração
+  const targetSingingTicks = Math.max(60, Math.min(micStats.totalTicks * 0.55, (micStats.vocalLineTicks || micStats.totalTicks * 0.5) * 0.9));
+  const coverageRatio = Math.min(1.0, micStats.voiceTicks / targetSingingTicks);
+  const coverageScore = coverageRatio * 45;
+
+  // Se cantou quase nada (< 2.5 segundos), pontuação proporcionalmente baixa (sem dar 90 de graça)
+  if (micStats.voiceTicks < 25) {
+    return Math.max(30, Math.min(48, Math.floor(32 + coverageScore + (Date.now() % 5))));
+  }
+
+  // 2. Projeção Vocal e Energia (0 a 30 pontos)
+  const meanEnergy = micStats.voiceEnergies.reduce((a, b) => a + b, 0) / micStats.voiceEnergies.length;
+  let energyScore = 0;
+  if (meanEnergy >= 28 && meanEnergy <= 85) {
+    energyScore = 30; // Projeção vocal ideal
+  } else if (meanEnergy > 85) {
+    // Distorção, estalo ou grito excessivo no microfone
+    energyScore = Math.max(15, 30 - (meanEnergy - 85) * 0.35);
+  } else {
+    // Voz excessivamente baixa ou sussurrada
+    energyScore = Math.max(8, (meanEnergy / 28) * 30);
+  }
+
+  // 3. Modulação e Expressão Dinâmica (0 a 18 pontos)
+  const variance = micStats.voiceEnergies.reduce((acc, v) => acc + Math.pow(v - meanEnergy, 2), 0) / micStats.voiceEnergies.length;
+  const stdDev = Math.sqrt(variance);
+  let dynamicsScore = Math.min(18, Math.max(4, stdDev * 1.8));
+
+  // 4. Bônus de sincronia nos versos (0 a 7 pontos)
+  let syncBonus = 0;
+  if (micStats.vocalLineTicks > 0) {
+    const syncRatio = micStats.activeSingingDuringVocalLines / micStats.vocalLineTicks;
+    syncBonus = Math.min(7, syncRatio * 7);
+  } else {
+    syncBonus = 4;
+  }
+
+  const rawScore = coverageScore + energyScore + dynamicsScore + syncBonus;
+
+  // Calibração autêntica:
+  // - Abaixo de 50: quase sem cantar / mic mudo
+  // - 50 a 69: cantou pedaços pequenos ou com pouca energia
+  // - 70 a 79: boa animação, performance regular
+  // - 80 a 89: cantou quase toda a música com boa energia e afinação
+  // - 90 a 95: performance excepcional com cobertura e modulação excelentes
+  // - 96 a 99: quase profissional, sustentação perfeita
+  let finalScore = Math.round(rawScore);
+
+  // Variação orgânica sutil (+- 1 ponto)
+  finalScore = finalScore + ((Date.now() % 3) - 1);
+
+  return Math.max(30, Math.min(99, finalScore));
 }
 
 function showScoreModal() {
   const score = calculateScore();
   finalScoreNumber.textContent = score;
 
-  if (score >= 95) scorePraise.textContent = "Voz de Ouro! Estrela da Noite! 🌟";
-  else if (score >= 90) scorePraise.textContent = "Show Inesquecível! Afinação de Respeito! 🔥";
-  else if (score >= 82) scorePraise.textContent = "Mandou Muito Bem! A Galera Foi ao Delírio! 🎉";
-  else scorePraise.textContent = "Boa Apresentação! Valeu a Animação! 👏";
+  if (score >= 96) scorePraise.textContent = "Voz de Ouro Lendária! Nível Profissional! 👑";
+  else if (score >= 90) scorePraise.textContent = "Espetacular! Show de arrepiar e voz afinada! 🌟";
+  else if (score >= 80) scorePraise.textContent = "Showzaço! Afinação e presença de palco! 🔥";
+  else if (score >= 68) scorePraise.textContent = "Mandou Bem! A plateia cantou junto! 🎉";
+  else if (score >= 50) scorePraise.textContent = "Boa Tentativa! Continue treinando o fôlego! 🎶";
+  else scorePraise.textContent = "Microfone Tímido! Solte a voz na próxima! 🎙️";
 
-  if (window.confetti) {
+  if (score >= 80 && window.confetti) {
     const stageCard = document.getElementById("karaoke-stage-card");
     if (document.fullscreenElement === stageCard) {
       let stageCanvas = document.getElementById("stage-confetti-canvas");
@@ -1182,7 +1355,7 @@ function showScoreModal() {
 
   inputSingerName.value = currentSongData?.requested_by || "";
   modalScore.classList.remove("hidden");
-  singingSamples = [];
+  resetMicStats();
 }
 
 formHall.addEventListener("submit", async (e) => {
