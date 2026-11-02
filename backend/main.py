@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -374,6 +374,12 @@ def api_add_hall_of_fame(entry: ScoreEntry):
         "song_title": entry.song_title
     })
     return {"success": True, "score": clamped_score}
+
+@app.get("/favicon.ico", include_in_schema=False)
+def api_favicon():
+    """Serve um ícone de microfone para a aba do navegador, evitando logs de 404 no terminal."""
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🎤</text></svg>'
+    return Response(content=svg, media_type="image/svg+xml")
 
 @app.get("/party")
 def page_party():
