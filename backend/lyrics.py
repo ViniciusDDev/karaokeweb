@@ -82,11 +82,52 @@ def parse_vtt(vtt_text: str) -> List[Dict[str, Any]]:
     lines.sort(key=lambda x: x["time"])
     return lines
 
+def score_lrclib_candidate(item: Dict[str, Any], target_track: str, target_artist: str, target_dur: Optional[int] = None) -> float:
+    """Calcula pontuação de aderência para evitar versões em outros idiomas ou faixas erradas."""
+    score = 0.0
+    cand_track = (item.get("trackName") or "").lower()
+    cand_artist = (item.get("artistName") or "").lower()
+    t_track = target_track.lower().strip()
+    t_artist = target_artist.lower().strip()
+
+    # Penaliza versões traduzidas indesejadas (ex: espanhol ou acústico quando não solicitado)
+    bad_tags = ["en español", "versión en español", "version en espanol", "spanish version", "en castellano", "traducción", "cover"]
+    for tag in bad_tags:
+        if tag in cand_track and tag not in t_track:
+            score -= 15.0
+
+    # Correspondência de faixa
+    if t_track and t_track == cand_track:
+        score += 10.0
+    elif t_track and t_track in cand_track:
+        score += 5.0
+
+    # Correspondência de artista
+    if t_artist and t_artist in cand_artist:
+        score += 8.0
+    elif t_artist:
+        artist_words = [w for w in t_artist.split() if len(w) > 3]
+        if any(w in cand_artist for w in artist_words):
+            score += 4.0
+
+    # Correspondência de duração
+    cand_dur = item.get("duration")
+    if target_dur and cand_dur:
+        diff = abs(cand_dur - target_dur)
+        if diff <= 6:
+            score += 5.0
+        elif diff <= 15:
+            score += 2.0
+        elif diff > 50:
+            score -= 4.0
+
+    return score
+
 # -------------------------------------------------------------
 # Camada 1: LRCLIB (Busca Exata e Busca Ampla)
 # -------------------------------------------------------------
 async def fetch_lyrics_lrclib(track: str, artist: str = "", duration: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    """Consulta a API LRCLIB com estratégias em cascata."""
+    """Consulta a API LRCLIB com estratégias em cascata e ranqueamento inteligente."""
     async with httpx.AsyncClient(timeout=6.0) as client:
         # 1. Tentativa com parâmetros diretos
         try:
@@ -108,7 +149,7 @@ async def fetch_lyrics_lrclib(track: str, artist: str = "", duration: Optional[i
         except Exception as e:
             logger.debug(f"LRCLIB get falhou: {e}")
 
-        # 2. Tentativa por busca ampla com query composta
+        # 2. Tentativa por busca ampla com query composta e ranqueamento de candidatos
         queries = []
         if artist and track:
             queries.append(f"{artist} {track}")
@@ -120,12 +161,21 @@ async def fetch_lyrics_lrclib(track: str, artist: str = "", duration: Optional[i
                 if resp.status_code == 200:
                     results = resp.json()
                     if isinstance(results, list) and len(results) > 0:
+                        candidates = []
                         for item in results:
                             synced = item.get("syncedLyrics")
                             if synced:
-                                parsed = parse_lrc(synced)
+                                cand_score = score_lrclib_candidate(item, track, artist, duration)
+                                candidates.append((cand_score, item))
+
+                        if candidates:
+                            candidates.sort(key=lambda x: x[0], reverse=True)
+                            best_score, best_item = candidates[0]
+                            # Só descarta se a pontuação for muito negativa (penalidade alta de idioma)
+                            if best_score >= -5.0:
+                                parsed = parse_lrc(best_item["syncedLyrics"])
                                 if parsed:
-                                    logger.info(f"Camada 1: Letra obtida no LRCLIB via busca '{q}'")
+                                    logger.info(f"Camada 1: Letra ranqueada (score {best_score}) para '{best_item.get('trackName')}' ({best_item.get('artistName')})")
                                     return {"source": "lrclib_search", "synced": True, "lines": parsed}
             except Exception as e:
                 logger.debug(f"LRCLIB search falhou para '{q}': {e}")

@@ -38,12 +38,18 @@ def get_hardware_info():
             "description": f"Aceleração GPU Ativada ({device_name})"
         }
     else:
+        has_nvidia_driver = bool(shutil.which("nvidia-smi"))
+        if has_nvidia_driver:
+            desc = "GPU NVIDIA Detectada (Execute iniciar_karaoke.bat para ativar CUDA)"
+        else:
+            desc = "Modo Economia de Recursos (CPU Otimizado)"
+
         return {
             "device": "cpu",
             "device_name": "CPU",
             "model_name": "htdemucs",
             "shifts": 0,
-            "description": "Modo Economia de Recursos (CPU Otimizado)"
+            "description": desc
         }
 
 def separate_vocals_lead_and_backing(vocals_data, sample_rate):

@@ -8,10 +8,10 @@ let startTime = 0;
 let pauseOffset = 0;
 let totalDuration = 0;
 
-// Web Audio nós
-let bufferSources = { instrumental: null, backing: null, lead: null };
-let audioBuffers = { instrumental: null, backing: null, lead: null };
-let gainNodes = { instrumental: null, backing: null, lead: null };
+// Web Audio nós (2 Stems: Instrumental & Lead Vocal)
+let bufferSources = { instrumental: null, lead: null };
+let audioBuffers = { instrumental: null, lead: null };
+let gainNodes = { instrumental: null, lead: null };
 
 // Motor de Microfone e Retorno ao Vivo
 let micStream = null;
@@ -78,9 +78,10 @@ const currentTitle = document.getElementById("current-title");
 const currentArtist = document.getElementById("current-artist");
 const currentSingerBadge = document.getElementById("current-singer-badge");
 
-const lyricPrev = document.getElementById("lyric-prev");
-const lyricCurrent = document.getElementById("lyric-current");
-const lyricNext = document.getElementById("lyric-next");
+const lyricsScrollBox = document.getElementById("lyrics-scroll-box");
+const introCountdown = document.getElementById("intro-countdown");
+const introCountdownSeconds = document.getElementById("intro-countdown-seconds");
+const btnToggleFullscreen = document.getElementById("btn-toggle-fullscreen");
 
 const seekBar = document.getElementById("seek-bar");
 const timeCurrent = document.getElementById("time-current");
@@ -96,20 +97,18 @@ const drawerQueueBadge = document.getElementById("drawer-queue-badge");
 const drawerQueueList = document.getElementById("drawer-queue-list");
 const btnCloseQueueDrawer = document.getElementById("btn-close-queue-drawer");
 
-// Modal Mixer de Som
+// Modal Mixer de Som (Instrumental, Lead Guia, Retorno Mic, Contraste)
 const modalMixer = document.getElementById("modal-mixer");
 const btnOpenMixer = document.getElementById("btn-open-mixer");
 const btnCloseMixer = document.getElementById("btn-close-mixer");
 const btnSaveMixer = document.getElementById("btn-save-mixer");
 
 const sliderInst = document.getElementById("slider-inst");
-const sliderBacking = document.getElementById("slider-backing");
 const sliderLead = document.getElementById("slider-lead");
 const sliderMic = document.getElementById("slider-mic");
 const sliderOpacity = document.getElementById("slider-opacity");
 
 const volTextInst = document.getElementById("vol-text-inst");
-const volTextBacking = document.getElementById("vol-text-backing");
 const volTextLead = document.getElementById("vol-text-lead");
 const volTextMic = document.getElementById("vol-text-mic");
 const textOpacity = document.getElementById("text-opacity");
@@ -420,25 +419,29 @@ window.playAudioPreview = function(videoId, btn) {
   const audio = new Audio(`/api/preview/${videoId}`);
   activePreviewAudio = audio;
 
-  audio.onplaying = () => {
-    btn.innerHTML = `<span>⏹ Parar (5s)</span>`;
-    btn.classList.add("bg-red-500/30", "text-red-300", "border-red-500/40");
-
-    previewTimeout = setTimeout(() => {
-      stopAudioPreview();
-    }, 5000);
+  let started = false;
+  const startAudio = () => {
+    if (started) return;
+    started = true;
+    audio.play().then(() => {
+      btn.innerHTML = `<span>⏹ Parar (5s)</span>`;
+      btn.classList.add("bg-red-500/30", "text-red-300", "border-red-500/40");
+      previewTimeout = setTimeout(() => {
+        stopAudioPreview();
+      }, 5000);
+    }).catch(() => {
+      btn.innerHTML = `<span>⚠️ Clique p/ Ouvir</span>`;
+      setTimeout(() => stopAudioPreview(), 2000);
+    });
   };
 
-  audio.onended = () => stopAudioPreview();
-  audio.onerror = () => {
+  audio.addEventListener("canplaythrough", startAudio, { once: true });
+  audio.addEventListener("ended", () => stopAudioPreview());
+  audio.addEventListener("error", () => {
     btn.innerHTML = `<span>⚠️ Erro Preview</span>`;
     setTimeout(() => stopAudioPreview(), 2000);
-  };
-
-  audio.play().catch(() => {
-    btn.innerHTML = `<span>⚠️ Clique p/ Tocar</span>`;
-    setTimeout(() => stopAudioPreview(), 2000);
   });
+  audio.load();
 };
 
 // ========================================================
@@ -573,6 +576,7 @@ async function loadKaraokeTrack(songData) {
   stopPlayback();
   currentSongData = songData;
   currentLyrics = songData.lyrics?.lines || [];
+  lastActiveIdx = -1;
 
   currentTitle.textContent = songData.title;
   currentArtist.textContent = songData.artist || "Artista";
@@ -580,6 +584,7 @@ async function loadKaraokeTrack(songData) {
   karaokeBg.style.backgroundImage = `url('${songData.thumbnail}')`;
 
   btnHeaderStage.classList.remove("hidden");
+  renderSpotifyLyrics(currentLyrics);
 
   const ctx = getAudioContext();
   if (ctx.state === "suspended") {
@@ -592,26 +597,21 @@ async function loadKaraokeTrack(songData) {
   }
 
   gainNodes.instrumental = ctx.createGain();
-  gainNodes.backing = ctx.createGain();
   gainNodes.lead = ctx.createGain();
 
-  gainNodes.instrumental.gain.value = sliderInst.value / 100;
-  gainNodes.backing.gain.value = sliderBacking.value / 100;
-  gainNodes.lead.gain.value = sliderLead.value / 100;
+  gainNodes.instrumental.gain.value = sliderInst ? (sliderInst.value / 100) : 1;
+  gainNodes.lead.gain.value = sliderLead ? (sliderLead.value / 100) : 0.2;
 
   gainNodes.instrumental.connect(ctx.destination);
-  gainNodes.backing.connect(ctx.destination);
   gainNodes.lead.connect(ctx.destination);
 
   try {
-    const [bufInst, bufBacking, bufLead] = await Promise.all([
+    const [bufInst, bufLead] = await Promise.all([
       fetchAudioBuffer(songData.stems.instrumental),
-      fetchAudioBuffer(songData.stems.backing),
       fetchAudioBuffer(songData.stems.lead_vocal),
     ]);
 
     audioBuffers.instrumental = bufInst;
-    audioBuffers.backing = bufBacking;
     audioBuffers.lead = bufLead;
 
     totalDuration = bufInst.duration;
@@ -645,10 +645,6 @@ function startPlayback() {
   bufferSources.instrumental.buffer = audioBuffers.instrumental;
   bufferSources.instrumental.connect(gainNodes.instrumental);
 
-  bufferSources.backing = audioCtx.createBufferSource();
-  bufferSources.backing.buffer = audioBuffers.backing;
-  bufferSources.backing.connect(gainNodes.backing);
-
   bufferSources.lead = audioCtx.createBufferSource();
   bufferSources.lead.buffer = audioBuffers.lead;
   bufferSources.lead.connect(gainNodes.lead);
@@ -656,7 +652,6 @@ function startPlayback() {
   startTime = audioCtx.currentTime - pauseOffset;
 
   bufferSources.instrumental.start(0, pauseOffset);
-  bufferSources.backing.start(0, pauseOffset);
   bufferSources.lead.start(0, pauseOffset);
 
   isPlaying = true;
@@ -669,9 +664,8 @@ function pausePlayback() {
   if (!isPlaying) return;
   pauseOffset = audioCtx.currentTime - startTime;
 
-  try { bufferSources.instrumental.stop(); } catch(e){}
-  try { bufferSources.backing.stop(); } catch(e){}
-  try { bufferSources.lead.stop(); } catch(e){}
+  try { bufferSources.instrumental?.stop(); } catch(e){}
+  try { bufferSources.lead?.stop(); } catch(e){}
 
   isPlaying = false;
   btnPlayPause.textContent = "▶";
@@ -679,14 +673,42 @@ function pausePlayback() {
 
 function stopPlayback() {
   if (isPlaying) {
-    try { bufferSources.instrumental.stop(); } catch(e){}
-    try { bufferSources.backing.stop(); } catch(e){}
-    try { bufferSources.lead.stop(); } catch(e){}
+    try { bufferSources.instrumental?.stop(); } catch(e){}
+    try { bufferSources.lead?.stop(); } catch(e){}
   }
   isPlaying = false;
   pauseOffset = 0;
   btnPlayPause.textContent = "▶";
+  if (introCountdown) introCountdown.classList.add("hidden");
 }
+
+window.seekTo = function(targetSeconds) {
+  if (!audioBuffers.instrumental) return;
+  const clamped = Math.max(0, Math.min(totalDuration, targetSeconds));
+  pauseOffset = clamped;
+  timeCurrent.textContent = formatTime(clamped);
+  seekBar.value = Math.floor(clamped);
+
+  if (isPlaying) {
+    try { bufferSources.instrumental?.stop(); } catch(e){}
+    try { bufferSources.lead?.stop(); } catch(e){}
+
+    bufferSources.instrumental = audioCtx.createBufferSource();
+    bufferSources.instrumental.buffer = audioBuffers.instrumental;
+    bufferSources.instrumental.connect(gainNodes.instrumental);
+
+    bufferSources.lead = audioCtx.createBufferSource();
+    bufferSources.lead.buffer = audioBuffers.lead;
+    bufferSources.lead.connect(gainNodes.lead);
+
+    startTime = audioCtx.currentTime - pauseOffset;
+
+    bufferSources.instrumental.start(0, pauseOffset);
+    bufferSources.lead.start(0, pauseOffset);
+  }
+
+  updateLyrics(clamped);
+};
 
 function updatePlaybackProgress() {
   if (!isPlaying) return;
@@ -705,8 +727,64 @@ function updatePlaybackProgress() {
   requestAnimationFrame(updatePlaybackProgress);
 }
 
+let lastActiveIdx = -1;
+
+function escapeHtml(text) {
+  if (!text) return "";
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function renderSpotifyLyrics(lines) {
+  if (!lyricsScrollBox) return;
+  if (!lines || lines.length === 0) {
+    lyricsScrollBox.innerHTML = `
+      <div class="py-12 flex flex-col items-center gap-2 text-slate-400">
+        <p class="text-lg sm:text-2xl font-bold">Sem letras sincronizadas disponíveis</p>
+        <p class="text-xs text-slate-500">Clique em "📝 Ajustar Letra" para buscar ou gerar com IA.</p>
+      </div>
+    `;
+    return;
+  }
+
+  lyricsScrollBox.innerHTML = lines.map((line, idx) => `
+    <p
+      id="lyric-line-${idx}"
+      onclick="seekTo(${line.time})"
+      class="lyric-row text-slate-400 text-lg sm:text-2xl md:text-3xl font-semibold cursor-pointer transition-all duration-300 hover:text-sky-300 px-4 py-2 rounded-2xl"
+      data-time="${line.time}"
+      title="Clique para ir para este trecho"
+    >
+      ${escapeHtml(line.text)}
+    </p>
+  `).join("");
+}
+
 function updateLyrics(currentTime) {
-  if (!currentLyrics || currentLyrics.length === 0) return;
+  if (!currentLyrics || currentLyrics.length === 0) {
+    if (introCountdown) introCountdown.classList.add("hidden");
+    return;
+  }
+
+  // Contador regressivo de introdução antes do primeiro verso
+  const firstLine = currentLyrics[0];
+  if (firstLine && firstLine.time > 2.5 && currentTime < firstLine.time) {
+    const diff = Math.ceil(firstLine.time - currentTime);
+    if (diff <= 5 && diff >= 1) {
+      if (introCountdown) {
+        introCountdown.classList.remove("hidden");
+        if (introCountdownSeconds) introCountdownSeconds.textContent = diff;
+      }
+    } else {
+      if (introCountdown) introCountdown.classList.add("hidden");
+    }
+  } else {
+    if (introCountdown) introCountdown.classList.add("hidden");
+  }
 
   let activeIdx = -1;
   for (let i = 0; i < currentLyrics.length; i++) {
@@ -717,10 +795,21 @@ function updateLyrics(currentTime) {
     }
   }
 
-  if (activeIdx >= 0) {
-    lyricPrev.textContent = activeIdx > 0 ? currentLyrics[activeIdx - 1].text : "";
-    lyricCurrent.textContent = currentLyrics[activeIdx].text;
-    lyricNext.textContent = activeIdx < currentLyrics.length - 1 ? currentLyrics[activeIdx + 1].text : "";
+  if (activeIdx === lastActiveIdx) return;
+  lastActiveIdx = activeIdx;
+
+  for (let i = 0; i < currentLyrics.length; i++) {
+    const el = document.getElementById(`lyric-line-${i}`);
+    if (!el) continue;
+
+    if (i === activeIdx) {
+      el.className = "lyric-row text-amber-300 text-2xl sm:text-4xl md:text-5xl font-black scale-105 drop-shadow-lg cursor-pointer transition-all duration-300 px-4 py-2 rounded-2xl";
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else if (i < activeIdx) {
+      el.className = "lyric-row text-slate-500 text-base sm:text-xl font-medium opacity-50 cursor-pointer transition-all duration-300 hover:text-slate-300 px-4 py-1.5 rounded-2xl";
+    } else {
+      el.className = "lyric-row text-slate-300 text-lg sm:text-2xl font-semibold opacity-90 cursor-pointer transition-all duration-300 hover:text-sky-300 px-4 py-1.5 rounded-2xl";
+    }
   }
 }
 
@@ -819,6 +908,11 @@ window.selectLyricsOption = async function(opt) {
 
     currentLyrics = opt.lines;
     currentSongData.lyrics = newLyrics;
+    lastActiveIdx = -1;
+    renderSpotifyLyrics(currentLyrics);
+    const current = isPlaying ? (audioCtx.currentTime - startTime) : pauseOffset;
+    updateLyrics(current);
+
     modalAdjustLyrics.classList.add("hidden");
     alert("Letra sincronizada atualizada com sucesso!");
   } catch (err) {
@@ -837,6 +931,11 @@ btnWhisperGenerate.addEventListener("click", async () => {
     if (data.success && data.lyrics) {
       currentLyrics = data.lyrics.lines;
       currentSongData.lyrics = data.lyrics;
+      lastActiveIdx = -1;
+      renderSpotifyLyrics(currentLyrics);
+      const current = isPlaying ? (audioCtx.currentTime - startTime) : pauseOffset;
+      updateLyrics(current);
+
       modalAdjustLyrics.classList.add("hidden");
       alert("Letra gerada por IA (Whisper) com marcas de tempo aplicada!");
     } else {
@@ -1043,24 +1142,27 @@ function setupEventListeners() {
 
   seekBar.addEventListener("input", (e) => {
     const targetTime = parseFloat(e.target.value);
-    pauseOffset = targetTime;
-    timeCurrent.textContent = formatTime(targetTime);
-    if (isPlaying) {
-      stopPlayback();
-      startPlayback();
-    }
+    seekTo(targetTime);
   });
+
+  if (btnToggleFullscreen) {
+    btnToggleFullscreen.addEventListener("click", () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(err => {
+          console.warn("Tela cheia indisponível:", err);
+        });
+      } else {
+        document.exitFullscreen?.().catch(err => {
+          console.warn("Erro ao sair de tela cheia:", err);
+        });
+      }
+    });
+  }
 
   sliderInst.addEventListener("input", (e) => {
     const val = e.target.value;
     volTextInst.textContent = `${val}%`;
     if (gainNodes.instrumental) gainNodes.instrumental.gain.value = val / 100;
-  });
-
-  sliderBacking.addEventListener("input", (e) => {
-    const val = e.target.value;
-    volTextBacking.textContent = `${val}%`;
-    if (gainNodes.backing) gainNodes.backing.gain.value = val / 100;
   });
 
   sliderLead.addEventListener("input", (e) => {

@@ -225,18 +225,44 @@
       const audio = new Audio(`/api/preview/${videoId}`);
       mobilePreviewAudio = audio;
       btn.dataset.mobilePreview = "true";
-      btn.textContent = "⏹ 5s";
+      btn.textContent = "⏳...";
       btn.classList.add("text-amber-400", "border-amber-400");
 
-      audio.play().catch(e => console.warn("Preview:", e));
+      let started = false;
+      const startAudio = () => {
+        if (started) return;
+        started = true;
+        audio.play().then(() => {
+          btn.textContent = "⏹ 5s";
+          mobilePreviewTimer = setTimeout(() => {
+            audio.pause();
+            mobilePreviewAudio = null;
+            btn.dataset.mobilePreview = "false";
+            btn.textContent = "▶ 5s";
+            btn.classList.remove("text-amber-400", "border-amber-400");
+          }, 5000);
+        }).catch(e => {
+          btn.textContent = "▶ 5s";
+          btn.dataset.mobilePreview = "false";
+          btn.classList.remove("text-amber-400", "border-amber-400");
+        });
+      };
 
-      mobilePreviewTimer = setTimeout(() => {
-        audio.pause();
-        mobilePreviewAudio = null;
+      audio.addEventListener("canplaythrough", startAudio, { once: true });
+      audio.addEventListener("ended", () => {
         btn.dataset.mobilePreview = "false";
         btn.textContent = "▶ 5s";
         btn.classList.remove("text-amber-400", "border-amber-400");
-      }, 5000);
+      });
+      audio.addEventListener("error", () => {
+        btn.dataset.mobilePreview = "false";
+        btn.textContent = "⚠️ Erro";
+        btn.classList.remove("text-amber-400", "border-amber-400");
+        setTimeout(() => {
+          btn.textContent = "▶ 5s";
+        }, 2000);
+      });
+      audio.load();
     };
 
     // 5. Adicionar à Fila
@@ -320,7 +346,7 @@
           statusBadge = `<span class="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px]">Aguardando (${idx + 1}º)</span>`;
         }
 
-        const canDelete = item.status !== "playing" && item.status !== "processing";
+        const canDelete = item.status !== "playing";
 
         return `
           <div class="bg-slate-900/90 border ${item.status === 'playing' ? 'border-emerald-500/50 bg-emerald-950/20' : 'border-slate-800'} rounded-xl p-3 flex items-center gap-3">

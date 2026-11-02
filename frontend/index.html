@@ -223,6 +223,9 @@
           </div>
 
           <div class="flex items-center gap-2.5 flex-wrap">
+            <button id="btn-toggle-fullscreen" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800/90 text-slate-300 border border-slate-700 hover:bg-slate-700 transition flex items-center gap-1.5" title="Modo Telão/TV">
+              <span>⛶ Tela Cheia</span>
+            </button>
             <button id="btn-open-mixer" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800/90 text-amber-300 border border-amber-500/40 hover:bg-slate-700 transition flex items-center gap-1.5 shadow">
               <span>🎚️ Mesa de Som & Mic</span>
             </button>
@@ -242,14 +245,23 @@
           </div>
         </div>
 
-        <!-- Área Central das Letras Sincronizadas -->
-        <div class="relative z-10 flex-1 flex flex-col items-center justify-center p-6 sm:p-12 text-center overflow-hidden">
-          <div id="lyrics-container" class="flex flex-col gap-4 max-w-4xl w-full">
-            <p id="lyric-prev" class="text-sm sm:text-xl text-slate-400/80 transition-all duration-300 min-h-[1.75rem]">Aguardando início...</p>
-            <p id="lyric-current" class="text-3xl sm:text-5xl font-brand font-black text-white lyric-active leading-tight py-2 min-h-[3.5rem]">
-              Pressione Play para começar!
-            </p>
-            <p id="lyric-next" class="text-sm sm:text-xl text-slate-400/80 transition-all duration-300 min-h-[1.75rem]">...</p>
+        <!-- Área Central das Letras Sincronizadas (Estilo Spotify com Rolagem e Interatividade) -->
+        <div class="relative z-10 flex-1 flex flex-col items-center justify-center p-4 sm:p-8 text-center overflow-hidden w-full">
+          
+          <!-- Contador Regressivo de Introdução -->
+          <div id="intro-countdown" class="hidden absolute top-4 z-20 flex items-center justify-center pointer-events-none">
+            <div class="px-5 py-2 rounded-2xl bg-slate-900/90 border border-sky-400/50 text-sky-300 font-brand font-bold text-sm sm:text-base shadow-2xl backdrop-blur-md flex items-center gap-2.5 animate-pulse">
+              <span>🎤 Cante em:</span>
+              <span id="intro-countdown-seconds" class="font-black text-amber-300 font-mono text-xl sm:text-2xl">3</span>
+            </div>
+          </div>
+
+          <!-- Container com Lista Rolável de Letras (Estilo Spotify) -->
+          <div id="lyrics-scroll-box" class="w-full max-w-4xl max-h-[380px] sm:max-h-[460px] overflow-y-auto px-4 py-20 flex flex-col gap-5 sm:gap-7 text-center select-none scroll-smooth">
+            <div class="py-12 flex flex-col items-center gap-2 text-slate-400">
+              <p class="text-lg sm:text-2xl font-bold">Pressione Play para começar!</p>
+              <p class="text-xs text-slate-500">A letra sincronizada aparecerá aqui frase a frase.</p>
+            </div>
           </div>
         </div>
 
@@ -328,8 +340,8 @@
         <button id="btn-close-mixer" class="text-slate-400 hover:text-white font-bold text-lg">✕</button>
       </div>
 
-      <!-- Grid dos 5 Controladores -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <!-- Grid dos 4 Controladores -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         <!-- Faixa 1: Instrumental -->
         <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
@@ -341,17 +353,7 @@
           <p class="text-[11px] text-slate-500">Demucs v4 alta fidelidade.</p>
         </div>
 
-        <!-- Faixa 2: Backing Vocals -->
-        <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-indigo-400">🎶 Backing</span>
-            <span id="vol-text-backing" class="text-xs font-mono text-slate-300">80%</span>
-          </div>
-          <input type="range" id="slider-backing" min="0" max="150" value="80" class="accent-indigo-400 h-2 bg-slate-800 rounded-lg cursor-pointer">
-          <p class="text-[11px] text-slate-500">Coros e segundas vozes.</p>
-        </div>
-
-        <!-- Faixa 3: Voz Guia Original -->
+        <!-- Faixa 2: Voz Guia Original -->
         <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold uppercase tracking-wider text-pink-400">🎤 Voz Guia</span>
@@ -361,7 +363,7 @@
           <p class="text-[11px] text-slate-500">Guia original. 0% para solo.</p>
         </div>
 
-        <!-- Faixa 4: Retorno ao Vivo do Microfone -->
+        <!-- Faixa 3: Retorno ao Vivo do Microfone -->
         <div class="bg-slate-950 border border-emerald-500/30 rounded-2xl p-4 flex flex-col gap-3">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">🎙️ Retorno Mic</span>
@@ -371,7 +373,7 @@
           <p class="text-[11px] text-slate-500">Sua voz nos alto-falantes/fone.</p>
         </div>
 
-        <!-- Faixa 5: Contraste do Palco -->
+        <!-- Faixa 4: Contraste do Palco -->
         <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold uppercase tracking-wider text-amber-400">🎚️ Contraste</span>

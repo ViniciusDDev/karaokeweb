@@ -16,6 +16,8 @@ logger = logging.getLogger("openkaraoke.queue")
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
+CACHE_DIR = os.path.join(BASE_DIR, "cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 MAX_QUEUE_SIZE = 20
 
@@ -81,8 +83,10 @@ class QueueManager:
                 pass
 
     def get_queue_payload(self) -> List[Dict[str, Any]]:
-        """Retorna a lista serializada dos itens ativos na fila."""
-        return [item.model_dump() for item in self.queue if item.status != "finished"]
+        """Retorna a lista serializada dos itens ativos na fila ordenados por ordem estrita de chegada (FIFO)."""
+        active = [item for item in self.queue if item.status != "finished"]
+        active.sort(key=lambda x: x.created_at)
+        return [item.model_dump() for item in active]
 
     def add_to_queue(
         self,
@@ -198,11 +202,60 @@ class QueueManager:
     async def _process_item(self, item: QueueItem):
         item.status = "processing"
         item.percent = 5
-        item.message = "Baixando áudio do YouTube..."
+        item.message = "Verificando cache de alta velocidade..."
         await self.broadcast_update()
 
         job_dir = os.path.join(TEMP_DIR, item.id)
         os.makedirs(job_dir, exist_ok=True)
+
+        cache_video_dir = os.path.join(CACHE_DIR, item.video_id)
+        cached_inst = os.path.join(cache_video_dir, "instrumental.wav")
+        cached_lead = os.path.join(cache_video_dir, "lead_vocal.wav")
+        cached_lyrics_file = os.path.join(cache_video_dir, "lyrics.json")
+
+        # 1. Verificação de Cache Instantâneo
+        if os.path.exists(cached_inst) and os.path.exists(cached_lead):
+            logger.info(f"Música {item.video_id} ('{item.title}') carregada do cache instantâneo!")
+            item.percent = 60
+            item.message = "Carregando do cache de alta velocidade..."
+            await self.broadcast_update()
+
+            shutil.copy2(cached_inst, os.path.join(job_dir, "instrumental.wav"))
+            shutil.copy2(cached_lead, os.path.join(job_dir, "lead_vocal.wav"))
+            if os.path.exists(os.path.join(cache_video_dir, "backing.wav")):
+                shutil.copy2(os.path.join(cache_video_dir, "backing.wav"), os.path.join(job_dir, "backing.wav"))
+            else:
+                shutil.copy2(cached_lead, os.path.join(job_dir, "backing.wav"))
+
+            lyrics_data = None
+            if os.path.exists(cached_lyrics_file):
+                try:
+                    import json
+                    with open(cached_lyrics_file, "r", encoding="utf-8") as f:
+                        lyrics_data = json.load(f)
+                except Exception:
+                    pass
+
+            if not lyrics_data:
+                lyrics_data = await fetch_lyrics_cascade(
+                    title=item.title,
+                    artist=item.artist,
+                    duration=item.duration,
+                    job_dir=job_dir,
+                    vocal_audio_path=os.path.join(job_dir, "lead_vocal.wav")
+                )
+
+            item.stems = {
+                "instrumental": f"/api/audio/{item.id}/instrumental.wav",
+                "backing": f"/api/audio/{item.id}/backing.wav",
+                "lead_vocal": f"/api/audio/{item.id}/lead_vocal.wav"
+            }
+            item.lyrics = lyrics_data or {"source": "none", "synced": False, "lines": []}
+            item.percent = 100
+            item.message = "Pronta para cantar!"
+            item.status = "ready"
+            await self.broadcast_update()
+            return
 
         loop = asyncio.get_running_loop()
 
@@ -281,6 +334,20 @@ class QueueManager:
                 item.status = "ready"
 
                 logger.info(f"Música processada com sucesso: '{item.title}' (ID: {item.id})")
+
+                # Salva no cache persistente para reutilização instantânea
+                try:
+                    os.makedirs(cache_video_dir, exist_ok=True)
+                    shutil.copy2(os.path.join(job_dir, "instrumental.wav"), cached_inst)
+                    shutil.copy2(os.path.join(job_dir, "lead_vocal.wav"), cached_lead)
+                    if os.path.exists(os.path.join(job_dir, "backing.wav")):
+                        shutil.copy2(os.path.join(job_dir, "backing.wav"), os.path.join(cache_video_dir, "backing.wav"))
+                    if item.lyrics:
+                        import json
+                        with open(cached_lyrics_file, "w", encoding="utf-8") as f:
+                            json.dump(item.lyrics, f, ensure_ascii=False)
+                except Exception as cache_err:
+                    logger.warning(f"Aviso ao persistir cache: {cache_err}")
 
             except Exception as e:
                 logger.error(f"Erro ao processar '{item.title}': {e}", exc_info=True)

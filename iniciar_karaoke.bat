@@ -138,6 +138,36 @@ if not exist ".venv\Scripts\activate.bat" goto error_no_activate
 
 call ".venv\Scripts\activate.bat"
 if errorlevel 1 goto error_activate
+
+:: Verificacao e Ativacao Automatica de GPU NVIDIA (CUDA)
+if not exist ".venv\cuda_checked.flag" (
+    echo Verificando presenca de GPU NVIDIA no sistema...
+    nvidia-smi >nul 2>&1
+    if not errorlevel 1 (
+        echo [GPU] Placa NVIDIA detectada no Windows. Testando suporte CUDA no PyTorch...
+        ".venv\Scripts\python.exe" -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >nul 2>&1
+        if errorlevel 1 (
+            echo.
+            echo ========================================================
+            echo [GPU] PyTorch instalado nao possui suporte CUDA.
+            echo [GPU] Baixando versao oficial com NVIDIA CUDA 12.1...
+            echo ========================================================
+            ".venv\Scripts\python.exe" -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+            if not errorlevel 1 (
+                echo [GPU] Sucesso! Aceleracao por GPU NVIDIA CUDA ativada!
+            ) else (
+                echo [AVISO] Falha ao baixar PyTorch CUDA. O sistema usara CPU.
+            )
+        ) else (
+            echo [GPU] PyTorch ja esta configurado com aceleracao CUDA!
+        )
+    ) else (
+        echo [INFO] Nenhuma GPU NVIDIA detectada via nvidia-smi. Executando em CPU.
+    )
+    echo checked > ".venv\cuda_checked.flag"
+    echo.
+)
+
 goto prepare_temp
 
 :error_no_activate
@@ -164,6 +194,7 @@ exit /b 1
 echo [4/4] Preparando diretorio temporario e iniciando aplicacao...
 if exist "temp" rmdir /s /q "temp" >nul 2>&1
 mkdir "temp" >nul 2>&1
+if not exist "cache" mkdir "cache" >nul 2>&1
 
 :: 6. Abertura do Navegador e Inicializacao do Servidor
 echo Abrindo navegador em http://localhost:5000 ...
