@@ -1,14 +1,14 @@
 @echo off
-chcp 65001 >nul
-title OpenKaraoke - 1-Click Plug & Play
+chcp 65001 > nul
+title OpenKaraoke - Plug and Play
 
 echo ========================================================
-echo   🎤 OpenKaraoke (Plug & Play) - Inicializando...
+echo   OpenKaraoke (Plug and Play) - Inicializando...
 echo ========================================================
 echo.
 
-:: 1. Detecção Inteligente da Versão do Python
-:: Prioriza Python 3.12 ou 3.11 via py launcher para garantir compatibilidade com wheels pré-compiladas
+:: 1. Deteccao Inteligente da Versao do Python
+:: Prioriza Python 3.12 ou 3.11 via py launcher para garantir compatibilidade com wheels pre-compiladas
 set PYTHON_CMD=
 
 py -3.12 --version >nul 2>&1
@@ -41,9 +41,9 @@ if %ERRORLEVEL% equ 0 (
     goto python_found
 )
 
-echo [ERRO] Nenhuma instalação de Python foi encontrada no seu computador!
+echo [ERRO] Nenhuma instalacao de Python foi encontrada no seu computador!
 echo Por favor, instale o Python 3.11 ou 3.12 (64-bit) em python.org
-echo e marque a opção "Add Python to PATH" durante a instalação.
+echo e marque a opcao "Add Python to PATH" durante a instalacao.
 echo.
 pause
 exit /b 1
@@ -52,7 +52,7 @@ exit /b 1
 echo Utilizando interpretador: %PYTHON_CMD%
 %PYTHON_CMD% --version
 
-:: 2. Criação / Validação do Ambiente Virtual (.venv)
+:: 2. Criacao / Validacao do Ambiente Virtual (.venv)
 if not exist ".venv\installed.flag" (
     if exist ".venv" (
         echo Limpando ambiente virtual anterior para evitar conflito de pacotes...
@@ -67,7 +67,7 @@ if not exist ".venv\installed.flag" (
     )
 )
 
-:: 3. Ativação do Ambiente Virtual
+:: 3. Ativacao do Ambiente Virtual
 call .venv\Scripts\activate.bat
 if %ERRORLEVEL% neq 0 (
     echo [ERRO] Falha ao ativar o ambiente virtual .venv.
@@ -75,19 +75,19 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
-:: 4. Atualização das ferramentas de empacotamento e Instalação de Dependências
-echo [2/4] Verificando dependências pré-compiladas...
+:: 4. Atualizacao das ferramentas de empacotamento e Instalacao de Dependencias
+echo [2/4] Verificando dependencias pre-compiladas...
 if not exist ".venv\installed.flag" (
-    echo Atualizando pip, setuptools e wheel (essencial para reconhecer wheels binárias)...
+    echo Atualizando pip, setuptools e wheel (essencial para reconhecer wheels binarias)...
     python -m pip install --upgrade pip setuptools wheel
 
     echo.
-    echo Baixando pacotes binários pré-compilados (sem compilação C++)...
+    echo Baixando pacotes binarios pre-compilados (sem compilacao C++)...
     python -m pip install --prefer-binary -r requirements.txt
     if %ERRORLEVEL% neq 0 (
         echo.
-        echo [ERRO] Falha ao instalar as dependências.
-        echo Dica: Certifique-se de que está utilizando Python 3.11 ou 3.12 de 64 bits.
+        echo [ERRO] Falha ao instalar as dependencias.
+        echo Dica: Certifique-se de que esta utilizando Python 3.11 ou 3.12 de 64 bits.
         echo.
         pause
         exit /b 1
@@ -95,8 +95,8 @@ if not exist ".venv\installed.flag" (
     echo instalado > .venv\installed.flag
 )
 
-:: 5. Limpeza de sessões anteriores
-echo [3/4] Preparando diretório temporário...
+:: 5. Limpeza de sessoes anteriores
+echo [3/4] Preparando diretorio temporario...
 if exist "temp" (
     rmdir /s /q "temp" >nul 2>&1
 )
@@ -104,23 +104,24 @@ mkdir "temp" >nul 2>&1
 
 :: 6. Abertura do Navegador
 echo [4/4] Abrindo navegador em http://localhost:5000 ...
+echo Iniciando o servidor...
 start "" http://localhost:5000
 
 echo.
 echo ========================================================
-echo   🎉 OpenKaraoke está rodando!
+echo   OpenKaraoke esta rodando!
 echo   Acesse no navegador: http://localhost:5000
-echo   Para encerrar a festa, feche esta janela (os temporários
-echo   serão limpos automaticamente).
+echo   Para encerrar a festa, feche esta janela.
+echo   Os arquivos temporarios serao limpos automaticamente.
 echo ========================================================
 echo.
 
-:: 7. Execução do Servidor FastAPI
+:: 7. Execucao do Servidor FastAPI
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 5000
 
-:: Limpeza pós-encerramento
+:: Limpeza pos-encerramento
 if exist "temp" (
     rmdir /s /q "temp" >nul 2>&1
 )
 echo.
-echo Sessão encerrada. Arquivos temporários limpos!
+echo Sessao encerrada. Arquivos temporarios limpos!
