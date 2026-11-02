@@ -3,6 +3,8 @@
 let audioCtx = null;
 let currentSongData = null;
 let currentLyrics = [];
+let currentLyricsOffset = 0;
+let saveLyricsTimeout = null;
 let isPlaying = false;
 let startTime = 0;
 let pauseOffset = 0;
@@ -152,6 +154,15 @@ const inputLyricsQuery = document.getElementById("input-lyrics-query");
 const btnSearchLrclib = document.getElementById("btn-search-lrclib");
 const lyricsOptionsList = document.getElementById("lyrics-options-list");
 const btnWhisperGenerate = document.getElementById("btn-whisper-generate");
+
+// Controles de Sincronização & Calibragem de Letra
+const syncOffsetBadge = document.getElementById("sync-offset-badge");
+const sliderSyncOffset = document.getElementById("slider-sync-offset");
+const btnSyncSub1 = document.getElementById("btn-sync-sub-1");
+const btnSyncSubHalf = document.getElementById("btn-sync-sub-half");
+const btnSyncReset = document.getElementById("btn-sync-reset");
+const btnSyncAddHalf = document.getElementById("btn-sync-add-half");
+const btnSyncAdd1 = document.getElementById("btn-sync-add-1");
 
 // ========================================================
 // 1. GERENCIADOR DE TELAS (WIZARD PASSO A PASSO)
@@ -621,7 +632,14 @@ function updateProcessingView(item) {
 async function loadKaraokeTrack(songData) {
   stopPlayback();
   currentSongData = songData;
+  currentLyricsOffset = songData.lyrics?.offset || 0;
   currentLyrics = songData.lyrics?.lines || [];
+  currentLyrics.forEach(line => {
+    if (line.baseTime === undefined) {
+      line.baseTime = currentLyricsOffset !== 0 ? Math.max(0, line.time - currentLyricsOffset) : line.time;
+    }
+  });
+  updateSyncOffsetUI(currentLyricsOffset);
   lastActiveIdx = -1;
   resetMicStats();
 
@@ -973,11 +991,124 @@ btnSkipSong.addEventListener("click", async () => {
 });
 
 // ========================================================
-// 12. AJUSTAR LETRA (LRCLIB & WHISPER)
+// 12. AJUSTAR LETRA (LRCLIB, WHISPER & CALIBRAGEM DE TEMPO)
 // ========================================================
+function updateSyncOffsetUI(offset) {
+  const num = parseFloat(offset) || 0;
+  if (syncOffsetBadge) {
+    const sign = num > 0 ? "+" : "";
+    syncOffsetBadge.textContent = `${sign}${num.toFixed(1)}s`;
+    if (Math.abs(num) < 0.05) {
+      syncOffsetBadge.className = "font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700";
+    } else if (num > 0) {
+      syncOffsetBadge.className = "font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30";
+    } else {
+      syncOffsetBadge.className = "font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30";
+    }
+  }
+  if (sliderSyncOffset) {
+    sliderSyncOffset.value = num;
+  }
+}
+
+function applyLyricsOffset(offset, persist = true) {
+  currentLyricsOffset = Math.min(10, Math.max(-10, parseFloat(offset) || 0));
+  updateSyncOffsetUI(currentLyricsOffset);
+
+  if (!currentLyrics || currentLyrics.length === 0) return;
+
+  currentLyrics.forEach((line) => {
+    if (line.baseTime === undefined) {
+      line.baseTime = line.time;
+    }
+    line.time = Math.max(0, parseFloat((line.baseTime + currentLyricsOffset).toFixed(2)));
+  });
+
+  // Atualiza atributos nas tags HTML existentes para manter fluidez sem desmontar elementos
+  currentLyrics.forEach((line, idx) => {
+    const el = document.getElementById(`lyric-line-${idx}`);
+    if (el) {
+      el.setAttribute("data-time", line.time);
+      el.onclick = () => seekTo(line.time);
+    }
+  });
+
+  lastActiveIdx = -1;
+  const current = isPlaying ? (audioCtx.currentTime - startTime) : pauseOffset;
+  updateLyrics(current);
+
+  if (currentSongData) {
+    if (!currentSongData.lyrics) {
+      currentSongData.lyrics = { synced: true, lines: currentLyrics };
+    }
+    currentSongData.lyrics.offset = currentLyricsOffset;
+    currentSongData.lyrics.lines = currentLyrics;
+
+    if (persist) {
+      debouncedSaveLyrics();
+    }
+  }
+}
+
+function debouncedSaveLyrics() {
+  if (saveLyricsTimeout) clearTimeout(saveLyricsTimeout);
+  saveLyricsTimeout = setTimeout(async () => {
+    if (!currentSongData || !currentSongData.id || !currentSongData.lyrics) return;
+    try {
+      await fetch("/api/lyrics/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          queue_id: currentSongData.id,
+          lyrics_data: currentSongData.lyrics
+        })
+      });
+    } catch (err) {
+      console.warn("Erro ao salvar sincronização de letra:", err);
+    }
+  }, 500);
+}
+
+if (sliderSyncOffset) {
+  sliderSyncOffset.addEventListener("input", (e) => {
+    applyLyricsOffset(parseFloat(e.target.value));
+  });
+}
+
+if (btnSyncSub1) {
+  btnSyncSub1.addEventListener("click", () => {
+    applyLyricsOffset(currentLyricsOffset - 1.0);
+  });
+}
+
+if (btnSyncSubHalf) {
+  btnSyncSubHalf.addEventListener("click", () => {
+    applyLyricsOffset(currentLyricsOffset - 0.5);
+  });
+}
+
+if (btnSyncReset) {
+  btnSyncReset.addEventListener("click", () => {
+    applyLyricsOffset(0);
+  });
+}
+
+if (btnSyncAddHalf) {
+  btnSyncAddHalf.addEventListener("click", () => {
+    applyLyricsOffset(currentLyricsOffset + 0.5);
+  });
+}
+
+if (btnSyncAdd1) {
+  btnSyncAdd1.addEventListener("click", () => {
+    applyLyricsOffset(currentLyricsOffset + 1.0);
+  });
+}
+
 btnAdjustLyrics.addEventListener("click", () => {
   if (!currentSongData) return;
   modalAdjustLyrics.classList.remove("hidden");
+  updateSyncOffsetUI(currentLyricsOffset);
   inputLyricsQuery.value = `${currentSongData.artist} ${currentSongData.title}`.replace(/YouTube|Desconhecido/g, "").trim();
   searchLyricsOptions();
 });
@@ -1046,7 +1177,8 @@ window.selectLyricsOption = async function(opt) {
   const newLyrics = {
     source: opt.synced ? "lrclib_custom" : "lrclib_plain_custom",
     synced: opt.synced,
-    lines: opt.lines
+    lines: opt.lines,
+    offset: 0
   };
   try {
     await fetch("/api/lyrics/select", {
@@ -1058,6 +1190,9 @@ window.selectLyricsOption = async function(opt) {
       })
     });
 
+    currentLyricsOffset = 0;
+    updateSyncOffsetUI(0);
+    opt.lines.forEach(l => { l.baseTime = l.time; });
     currentLyrics = opt.lines;
     currentSongData.lyrics = newLyrics;
     lastActiveIdx = -1;
@@ -1081,6 +1216,9 @@ btnWhisperGenerate.addEventListener("click", async () => {
     const res = await fetch(`/api/lyrics/whisper/${currentSongData.id}`, { method: "POST" });
     const data = await res.json();
     if (data.success && data.lyrics) {
+      currentLyricsOffset = 0;
+      updateSyncOffsetUI(0);
+      data.lyrics.lines.forEach(l => { l.baseTime = l.time; });
       currentLyrics = data.lyrics.lines;
       currentSongData.lyrics = data.lyrics;
       lastActiveIdx = -1;

@@ -532,7 +532,7 @@
 
   <!-- Modal 'Ajustar Letra' -->
   <div id="modal-adjust-lyrics" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl flex flex-col gap-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-4">
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
         <h3 class="text-base font-bold text-white flex items-center gap-2">
           📝 Ajustar Letra da Música
@@ -540,9 +540,56 @@
         <button id="btn-close-adjust-modal" class="text-slate-400 hover:text-white font-bold">✕</button>
       </div>
 
-      <p class="text-xs text-slate-400">
-        Pesquise versões oficiais sincronizadas no LRCLIB ou utilize IA local caso a música seja rara ou ao vivo:
-      </p>
+      <!-- Temporizador e Calibragem de Sincronização -->
+      <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">⏱️</span>
+            <div>
+              <h4 class="text-xs font-bold text-white">Sincronização & Calibragem de Tempo</h4>
+              <p class="text-[11px] text-slate-400">Ajuste o tempo da letra em tempo real com a música tocando.</p>
+            </div>
+          </div>
+          <span id="sync-offset-badge" class="font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
+            0.0s
+          </span>
+        </div>
+
+        <!-- Slider de Ajuste Fino -->
+        <div class="flex items-center gap-3">
+          <span class="text-[10px] font-mono text-slate-500">-10s</span>
+          <input
+            type="range"
+            id="slider-sync-offset"
+            min="-10"
+            max="10"
+            step="0.1"
+            value="0"
+            class="flex-1 accent-sky-400 h-2 bg-slate-800 rounded-lg cursor-pointer"
+          />
+          <span class="text-[10px] font-mono text-slate-500">+10s</span>
+        </div>
+
+        <!-- Botões de Atalho Rápido -->
+        <div class="grid grid-cols-5 gap-1.5 sm:gap-2">
+          <button id="btn-sync-sub-1" type="button" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-sky-500/50 text-slate-200 text-xs py-2 rounded-xl transition font-mono active:scale-95" title="Adiantar 1.0 segundo">-1.0s</button>
+          <button id="btn-sync-sub-half" type="button" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-sky-500/50 text-slate-200 text-xs py-2 rounded-xl transition font-mono active:scale-95" title="Adiantar 0.5 segundo">-0.5s</button>
+          <button id="btn-sync-reset" type="button" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/50 text-slate-300 hover:text-white text-xs py-2 rounded-xl transition font-bold active:scale-95" title="Zerar ajuste de sincronização">Zerar</button>
+          <button id="btn-sync-add-half" type="button" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-sky-500/50 text-slate-200 text-xs py-2 rounded-xl transition font-mono active:scale-95" title="Atrasar 0.5 segundo">+0.5s</button>
+          <button id="btn-sync-add-1" type="button" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-sky-500/50 text-slate-200 text-xs py-2 rounded-xl transition font-mono active:scale-95" title="Atrasar 1.0 segundo">+1.0s</button>
+        </div>
+
+        <div class="flex items-center justify-between text-[10px] text-slate-500 px-1">
+          <span>◀ Adiantar letra (aparece antes)</span>
+          <span>Atrasar letra (aparece depois) ▶</span>
+        </div>
+      </div>
+
+      <div class="border-t border-slate-800 pt-1">
+        <p class="text-xs text-slate-400 mb-2">
+          Trocar versão por pesquisa no LRCLIB ou gerar com IA local:
+        </p>
+      </div>
 
       <div class="flex gap-2">
         <input
